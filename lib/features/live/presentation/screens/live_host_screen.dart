@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 
+import '../../../../core/constants/livekit_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../live/domain/models/live_stream_model.dart';
 import '../../../live/data/live_repository.dart';
 import '../providers/live_provider.dart';
-
-// Agora RTC integration is stubbed pending resolution of the
-// io.agora.rtc namespace conflict in agora_rtc_engine on AGP 8.x.
-// Database, provider, routing, and comment infrastructure are all intact.
 
 class LiveHostScreen extends ConsumerStatefulWidget {
   const LiveHostScreen({super.key, required this.stream});
@@ -21,35 +18,81 @@ class LiveHostScreen extends ConsumerStatefulWidget {
 
 class _LiveHostScreenState extends ConsumerState<LiveHostScreen> {
   final _commentCtrl = TextEditingController();
+  final _room = lk.Room();
+  lk.EventsListener<lk.RoomEvent>? _listener;
+
+  bool _isConnecting = true;
+  bool _isMicMuted = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _listener = _room.createListener();
+    _connect();
+  }
+
+  Future<void> _connect() async {
+    try {
+      final token = await LiveRepository.instance
+          .fetchLiveKitToken(widget.stream.channelName, isHost: true);
+      await _room.connect(LiveKitConstants.serverUrl, token);
+      await _room.localParticipant?.setCameraEnabled(true);
+      await _room.localParticipant?.setMicrophoneEnabled(true);
+      if (mounted) setState(() => _isConnecting = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isConnecting = false;
+          _error = 'Could not start the camera: $e';
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
     _commentCtrl.dispose();
+    _listener?.dispose();
+    _room.disconnect();
     LiveRepository.instance.endStream(widget.stream.id);
     super.dispose();
+  }
+
+  Future<void> _toggleMic() async {
+    final muted = !_isMicMuted;
+    await _room.localParticipant?.setMicrophoneEnabled(!muted);
+    setState(() => _isMicMuted = muted);
   }
 
   @override
   Widget build(BuildContext context) {
     final comments = ref.watch(liveCommentsProvider(widget.stream.id));
+    final localVideoTrack =
+        _room.localParticipant?.videoTrackPublications.firstOrNull?.track;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.videocam_off_rounded, color: Colors.white24, size: 64),
-                SizedBox(height: 16),
-                Text('Live camera coming soon',
-                    style: TextStyle(color: Colors.white54, fontSize: 16)),
-                SizedBox(height: 8),
-                Text('Agora SDK re-integration in progress',
-                    style: TextStyle(color: Colors.white30, fontSize: 12)),
-              ],
-            ),
+          Positioned.fill(
+            child: _isConnecting
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(_error!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white70)),
+                        ),
+                      )
+                    : localVideoTrack != null
+                        ? lk.VideoTrackRenderer(localVideoTrack as lk.VideoTrack)
+                        : const Center(
+                            child: Text('Waiting for camera…',
+                                style: TextStyle(color: Colors.white54)),
+                          ),
           ),
 
           SafeArea(
@@ -73,6 +116,11 @@ class _LiveHostScreenState extends ConsumerState<LiveHostScreen> {
                         style: const TextStyle(
                             color: Colors.white, fontWeight: FontWeight.w600),
                         overflow: TextOverflow.ellipsis),
+                  ),
+                  IconButton(
+                    icon: Icon(_isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                        color: Colors.white),
+                    onPressed: _toggleMic,
                   ),
                   TextButton(
                     onPressed: () => _confirmEnd(context),
@@ -126,55 +174,127 @@ class _LiveHostScreenState extends ConsumerState<LiveHostScreen> {
         ],
       ),
     );
-    if (confirmed == true && mounted) Navigator.of(context).pop();
+    if (confirmed != true || !mounted) return;
+    Navigator.of(context).pop();
   }
 }
 
 // ── Live Viewer Screen ─────────────────────────────────────────────
 
-class LiveViewerScreen extends ConsumerWidget {
+class LiveViewerScreen extends ConsumerStatefulWidget {
   const LiveViewerScreen({super.key, required this.stream});
   final LiveStreamModel stream;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LiveViewerScreen> createState() => _LiveViewerScreenState();
+}
+
+class _LiveViewerScreenState extends ConsumerState<LiveViewerScreen> {
+  final _commentCtrl = TextEditingController();
+  final _room = lk.Room();
+  lk.EventsListener<lk.RoomEvent>? _listener;
+
+  lk.VideoTrack? _remoteVideoTrack;
+  bool _isConnecting = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    LiveRepository.instance.joinStream(widget.stream.id);
+    _listener = _room.createListener()
+      ..on<lk.TrackSubscribedEvent>((event) {
+        if (event.track is lk.VideoTrack && mounted) {
+          setState(() => _remoteVideoTrack = event.track as lk.VideoTrack);
+        }
+      })
+      ..on<lk.TrackUnsubscribedEvent>((event) {
+        if (mounted && event.track == _remoteVideoTrack) {
+          setState(() => _remoteVideoTrack = null);
+        }
+      });
+    _connect();
+  }
+
+  Future<void> _connect() async {
+    try {
+      final token = await LiveRepository.instance
+          .fetchLiveKitToken(widget.stream.channelName, isHost: false);
+      await _room.connect(LiveKitConstants.serverUrl, token);
+      if (mounted) setState(() => _isConnecting = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isConnecting = false;
+          _error = 'Could not connect to this stream: $e';
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _commentCtrl.dispose();
+    _listener?.dispose();
+    _room.disconnect();
+    LiveRepository.instance.leaveStream(widget.stream.id);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stream = widget.stream;
     final comments = ref.watch(liveCommentsProvider(stream.id));
-    final commentCtrl = TextEditingController();
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundImage: stream.hostAvatar != null
-                      ? NetworkImage(stream.hostAvatar!)
-                      : null,
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.3),
-                  child: stream.hostAvatar == null
-                      ? const Icon(Icons.person, color: Colors.white, size: 40)
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                Text(stream.hostName,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700)),
-                const SizedBox(height: 8),
-                Text(stream.title,
-                    style: const TextStyle(color: Colors.white70, fontSize: 14)),
-                const SizedBox(height: 24),
-                const Icon(Icons.live_tv_rounded, color: Colors.white24, size: 48),
-                const SizedBox(height: 12),
-                const Text('Live video coming soon',
-                    style: TextStyle(color: Colors.white38, fontSize: 13)),
-              ],
-            ),
+          Positioned.fill(
+            child: _remoteVideoTrack != null
+                ? lk.VideoTrackRenderer(_remoteVideoTrack!)
+                : Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 40,
+                          backgroundImage: stream.hostAvatar != null
+                              ? NetworkImage(stream.hostAvatar!)
+                              : null,
+                          backgroundColor: AppColors.primary.withValues(alpha: 0.3),
+                          child: stream.hostAvatar == null
+                              ? const Icon(Icons.person, color: Colors.white, size: 40)
+                              : null,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(stream.hostName,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 8),
+                        Text(stream.title,
+                            style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                        const SizedBox(height: 24),
+                        if (_isConnecting)
+                          const CircularProgressIndicator()
+                        else if (_error != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(_error!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.white38, fontSize: 13)),
+                          )
+                        else ...[
+                          const Icon(Icons.live_tv_rounded, color: Colors.white24, size: 48),
+                          const SizedBox(height: 12),
+                          const Text('Waiting for host video…',
+                              style: TextStyle(color: Colors.white38, fontSize: 13)),
+                        ],
+                      ],
+                    ),
+                  ),
           ),
 
           SafeArea(
@@ -219,11 +339,11 @@ class LiveViewerScreen extends ConsumerWidget {
             left: 0,
             right: 0,
             child: _CommentInput(
-              ctrl: commentCtrl,
+              ctrl: _commentCtrl,
               onSend: () async {
-                final text = commentCtrl.text.trim();
+                final text = _commentCtrl.text.trim();
                 if (text.isEmpty) return;
-                commentCtrl.clear();
+                _commentCtrl.clear();
                 await LiveRepository.instance.sendComment(stream.id, text);
               },
             ),

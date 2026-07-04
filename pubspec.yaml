@@ -33,8 +33,12 @@ dependencies:
 
   # ── Camera & Live ─────────────────────────────────────────
   camera: ^0.11.0+2
-  # agora_rtc_engine removed — namespace conflict with AGP 8.x (iris-rtc vs agora-special-full)
-  # Re-add agora_rtc_engine once the package fixes the io.agora.rtc namespace collision
+  livekit_client: ^2.8.0
+  # agora_rtc_engine removed — no version satisfies this project's constraints:
+  # 6.6.2+ conflicts with flutter_secure_storage on the `ffi` version; 6.5.4 and
+  # earlier ship an AAR compiled against android-31, which fails Gradle's AAR
+  # metadata check against the compileSdk 34+ required by other plugins already
+  # in this app (camera, stripe, etc.). Replaced with LiveKit.
 
   # ── Video & Media ─────────────────────────────────────────
   youtube_player_flutter: ^9.0.3
@@ -46,7 +50,7 @@ dependencies:
 
   # ── Networking ────────────────────────────────────────────
   dio: ^5.4.3+1
-  connectivity_plus: ^6.0.3
+  connectivity_plus: ^7.2.0
 
   # ── Payments ──────────────────────────────────────────────
   flutter_stripe: ^11.1.0

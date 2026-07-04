@@ -67,6 +67,21 @@ class LiveRepository {
         .toList();
   }
 
+  // ── LiveKit access token ───────────────────────────────────
+
+  /// Fetches a LiveKit access token for [channelName] scoped to [isHost]
+  /// (host can publish audio/video, viewer can only subscribe). Minted
+  /// server-side by the `livekit-generate-token` Edge Function — the
+  /// API key/secret never touch the client.
+  Future<String> fetchLiveKitToken(String channelName, {required bool isHost}) async {
+    final res = await _db.functions.invoke('livekit-generate-token', body: {
+      'roomName': channelName,
+      'role': isHost ? 'host' : 'viewer',
+    });
+    final data = res.data as Map<String, dynamic>;
+    return data['token'] as String;
+  }
+
   // ── Viewer count ───────────────────────────────────────────
 
   Future<void> joinStream(String streamId) async {

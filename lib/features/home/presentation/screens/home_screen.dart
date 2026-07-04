@@ -6,11 +6,77 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
-import '../widgets/story_row.dart';
+import '../../../ads/presentation/widgets/native_ad_card.dart';
 import '../widgets/feed_post_card.dart';
 import '../widgets/youtube_video_card.dart';
 import '../providers/feed_provider.dart';
+import '../../../notifications/presentation/providers/notifications_provider.dart';
+import '../../../live/presentation/widgets/live_streams_row.dart';
 
+// ── Tab definitions ────────────────────────────────────────────
+class _HubTab {
+  const _HubTab({required this.label, required this.hubType, this.subHubs = const []});
+  final String label;
+  final String hubType;
+  final List<_SubFilter> subHubs;
+}
+
+class _SubFilter {
+  const _SubFilter({required this.label, required this.hubType});
+  final String label;
+  final String hubType;
+}
+
+const _tabs = [
+  _HubTab(label: 'All', hubType: AppConstants.hubAll),
+  _HubTab(
+    label: 'Faith',
+    hubType: AppConstants.hubFaith,
+    subHubs: [
+      _SubFilter(label: 'Christianity', hubType: AppConstants.hubChristianity),
+      _SubFilter(label: 'Islam', hubType: AppConstants.hubIslam),
+    ],
+  ),
+  _HubTab(
+    label: 'Sciences',
+    hubType: AppConstants.hubScience,
+    subHubs: [
+      _SubFilter(label: 'Biology', hubType: AppConstants.hubBiology),
+      _SubFilter(label: 'Chemistry', hubType: AppConstants.hubChemistry),
+      _SubFilter(label: 'Physics', hubType: AppConstants.hubPhysics),
+      _SubFilter(label: 'Mathematics', hubType: AppConstants.hubMathematics),
+      _SubFilter(label: 'Psychology', hubType: AppConstants.hubPsychology),
+      _SubFilter(label: 'Geography', hubType: AppConstants.hubGeography),
+      _SubFilter(label: 'History', hubType: AppConstants.hubHistory),
+    ],
+  ),
+  _HubTab(
+    label: 'Technology',
+    hubType: AppConstants.hubTechnology,
+    subHubs: [
+      _SubFilter(label: 'Engineering', hubType: AppConstants.hubEngineering),
+      _SubFilter(label: 'Robotics', hubType: AppConstants.hubRobotics),
+      _SubFilter(label: 'Aviation', hubType: AppConstants.hubAviation),
+      _SubFilter(label: 'Computer Science', hubType: AppConstants.hubComputerScience),
+    ],
+  ),
+  _HubTab(
+    label: 'Languages',
+    hubType: AppConstants.hubLanguages,
+    subHubs: [
+      _SubFilter(label: 'French', hubType: AppConstants.hubFrench),
+      _SubFilter(label: 'English', hubType: AppConstants.hubEnglish),
+      _SubFilter(label: 'Spanish', hubType: AppConstants.hubSpanish),
+      _SubFilter(label: 'German', hubType: AppConstants.hubGerman),
+      _SubFilter(label: 'Swahili', hubType: AppConstants.hubSwahili),
+      _SubFilter(label: 'Chinese', hubType: AppConstants.hubChinese),
+      _SubFilter(label: 'Japanese', hubType: AppConstants.hubJapanese),
+      _SubFilter(label: 'Arabic', hubType: AppConstants.hubArabic),
+    ],
+  ),
+];
+
+// ── Home Screen ────────────────────────────────────────────────
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -21,23 +87,15 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  String _activeHub = AppConstants.hubAll;
+
+  // Selected sub-filter per tab index (null = show parent hub)
+  final Map<int, String?> _subFilter = {};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) {
-        setState(() {
-          _activeHub = [
-            AppConstants.hubAll,
-            AppConstants.hubFaith,
-            AppConstants.hubCareer,
-          ][_tabController.index];
-        });
-      }
-    });
+    _tabController = TabController(length: _tabs.length, vsync: this);
+    _tabController.addListener(() => setState(() {}));
   }
 
   @override
@@ -46,44 +104,78 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     super.dispose();
   }
 
+  String _effectiveHub(int tabIndex) {
+    return _subFilter[tabIndex] ?? _tabs[tabIndex].hubType;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final unreadCount = ref.watch(unreadNotificationsCountProvider);
+    final tabIdx = _tabController.index;
+    final currentTab = _tabs[tabIdx];
+    final hasSubFilters = currentTab.subHubs.isNotEmpty;
+
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
       body: NestedScrollView(
         headerSliverBuilder: (ctx, _) => [
           _HomeAppBar(
-            onNotificationTap: () => context.push(AppRoutes.notifications),
-            onChatTap: () => context.push(AppRoutes.chats),
-            onCommunitiesTap: () => context.push(AppRoutes.communities),
-            onMyChurchTap: () => context.push(AppRoutes.myChurch),
+            hasUnread: unreadCount > 0,
+            onNotificationTap: () => context.go(AppRoutes.notifications),
+            onSearchTap: () => context.go(AppRoutes.search),
+            onCommunitiesTap: () => context.go(AppRoutes.communities),
+            onGoLiveTap: () => context.push(AppRoutes.liveStart),
           ),
-          SliverToBoxAdapter(child: StoryRow()),
           SliverPersistentHeader(
             pinned: true,
-            delegate: _HubTabBarDelegate(controller: _tabController),
+            delegate: _HubTabBarDelegate(
+              controller: _tabController,
+              extraHeight: hasSubFilters ? 48.0 : 0.0,
+              subFilters: hasSubFilters ? currentTab.subHubs : const [],
+              selectedSub: _subFilter[tabIdx],
+              onSubSelected: (hubType) {
+                setState(() {
+                  // Toggle off if already selected
+                  _subFilter[tabIdx] =
+                      _subFilter[tabIdx] == hubType ? null : hubType;
+                });
+              },
+            ),
           ),
         ],
         body: TabBarView(
           controller: _tabController,
-          children: [
-            _FeedTab(hubType: AppConstants.hubAll),
-            _FeedTab(hubType: AppConstants.hubFaith),
-            _FeedTab(hubType: AppConstants.hubCareer),
-          ],
+          children: List.generate(
+            _tabs.length,
+            (i) => _FeedTabWrapper(
+              tabIndex: i,
+              effectiveHub: _effectiveHub(i),
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
+// Simple wrapper that reads the effective hub from parent via index
+class _FeedTabWrapper extends StatelessWidget {
+  const _FeedTabWrapper({required this.tabIndex, required this.effectiveHub});
+  final int tabIndex;
+  final String effectiveHub;
+
+  @override
+  Widget build(BuildContext context) => _FeedTab(hubType: effectiveHub);
+}
+
 // ── App Bar ────────────────────────────────────────────────────
 class _HomeAppBar extends SliverAppBar {
   _HomeAppBar({
+    required bool hasUnread,
     required VoidCallback onNotificationTap,
-    required VoidCallback onChatTap,
+    required VoidCallback onSearchTap,
     required VoidCallback onCommunitiesTap,
-    required VoidCallback onMyChurchTap,
+    required VoidCallback onGoLiveTap,
   }) : super(
     backgroundColor: AppColors.darkBackground,
     floating: true,
@@ -91,39 +183,37 @@ class _HomeAppBar extends SliverAppBar {
     elevation: 0,
     scrolledUnderElevation: 0,
     toolbarHeight: 56,
+    leading: IconButton(
+      icon: const Icon(Icons.groups_2_rounded, color: Colors.white70, size: 26),
+      tooltip: 'Communities',
+      onPressed: onCommunitiesTap,
+    ),
     title: Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.hub_rounded, color: AppColors.secondary, size: 26),
-        const SizedBox(width: 8),
+        const Icon(Icons.hub_rounded, color: AppColors.secondary, size: 22),
+        const SizedBox(width: 6),
         Text(
           'CommunityHub',
-          style: AppTextStyles.titleLarge.copyWith(
+          style: AppTextStyles.titleMedium.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.w800,
           ),
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     ),
     actions: [
-      // My Church
       IconButton(
-        icon: const Icon(Icons.church_rounded, color: Colors.white70, size: 24),
-        onPressed: onMyChurchTap,
-        tooltip: 'My Church',
+        icon: const Icon(Icons.live_tv_rounded, color: Colors.red, size: 24),
+        onPressed: onGoLiveTap,
+        tooltip: 'Go Live',
       ),
-      // Communities
       IconButton(
-        icon: const Icon(Icons.groups_rounded, color: Colors.white70, size: 24),
-        onPressed: onCommunitiesTap,
-        tooltip: 'Communities',
+        icon: const Icon(Icons.search_rounded, color: Colors.white70, size: 24),
+        onPressed: onSearchTap,
+        tooltip: 'Search',
       ),
-      // Chat (WhatsApp style icon)
-      IconButton(
-        icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white70, size: 24),
-        onPressed: onChatTap,
-        tooltip: 'Chat',
-      ),
-      // Notifications (Facebook style)
       Stack(
         alignment: Alignment.center,
         children: [
@@ -132,19 +222,19 @@ class _HomeAppBar extends SliverAppBar {
             onPressed: onNotificationTap,
             tooltip: 'Notifications',
           ),
-          // Notification badge
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                color: AppColors.error,
-                shape: BoxShape.circle,
+          if (hasUnread)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: AppColors.error,
+                  shape: BoxShape.circle,
+                ),
               ),
             ),
-          ),
         ],
       ),
       const SizedBox(width: 4),
@@ -158,39 +248,122 @@ class _HomeAppBar extends SliverAppBar {
 
 // ── Hub Tab Bar ────────────────────────────────────────────────
 class _HubTabBarDelegate extends SliverPersistentHeaderDelegate {
-  const _HubTabBarDelegate({required this.controller});
+  const _HubTabBarDelegate({
+    required this.controller,
+    required this.extraHeight,
+    required this.subFilters,
+    required this.selectedSub,
+    required this.onSubSelected,
+  });
+
   final TabController controller;
+  final double extraHeight;
+  final List<_SubFilter> subFilters;
+  final String? selectedSub;
+  final ValueChanged<String> onSubSelected;
+
+  static const double _tabBarHeight = 48;
 
   @override
-  double get minExtent => 48;
+  double get minExtent => _tabBarHeight + extraHeight;
   @override
-  double get maxExtent => 48;
+  double get maxExtent => _tabBarHeight + extraHeight;
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
       color: AppColors.darkBackground,
-      child: TabBar(
-        controller: controller,
-        labelStyle: AppTextStyles.labelLarge.copyWith(fontWeight: FontWeight.w600),
-        unselectedLabelStyle: AppTextStyles.labelLarge,
-        labelColor: AppColors.secondary,
-        unselectedLabelColor: AppColors.textDarkSecondary,
-        indicator: const UnderlineTabIndicator(
-          borderSide: BorderSide(color: AppColors.secondary, width: 2),
-          insets: EdgeInsets.symmetric(horizontal: 16),
-        ),
-        tabs: const [
-          Tab(text: 'All'),
-          Tab(text: 'Faith Hub'),
-          Tab(text: 'Career Hub'),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Main tab bar
+          SizedBox(
+            height: _tabBarHeight,
+            child: TabBar(
+              controller: controller,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              labelStyle: AppTextStyles.labelLarge
+                  .copyWith(fontWeight: FontWeight.w700),
+              unselectedLabelStyle: AppTextStyles.labelLarge,
+              labelColor: AppColors.secondary,
+              unselectedLabelColor: AppColors.textDarkSecondary,
+              indicator: const UnderlineTabIndicator(
+                borderSide:
+                    BorderSide(color: AppColors.secondary, width: 2),
+                insets: EdgeInsets.symmetric(horizontal: 8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              tabs: _tabs
+                  .map((t) => Tab(
+                        child: Padding(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(t.label),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+
+          // Sub-filter chip row
+          if (subFilters.isNotEmpty)
+            SizedBox(
+              height: extraHeight,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 8),
+                itemCount: subFilters.length,
+                separatorBuilder: (_, __) =>
+                    const SizedBox(width: 8),
+                itemBuilder: (_, i) {
+                  final sub = subFilters[i];
+                  final isSelected = selectedSub == sub.hubType;
+                  return GestureDetector(
+                    onTap: () => onSubSelected(sub.hubType),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.secondary
+                            : AppColors.darkSurface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.secondary
+                              : AppColors.darkBorder,
+                        ),
+                      ),
+                      child: Text(
+                        sub.label,
+                        style: TextStyle(
+                          color: isSelected
+                              ? Colors.black
+                              : AppColors.textDarkSecondary,
+                          fontSize: 12,
+                          fontWeight: isSelected
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );
   }
 
   @override
-  bool shouldRebuild(_HubTabBarDelegate oldDelegate) => false;
+  bool shouldRebuild(_HubTabBarDelegate old) =>
+      old.extraHeight != extraHeight ||
+      old.selectedSub != selectedSub ||
+      old.subFilters != subFilters;
 }
 
 // ── Feed Tab (with infinite scroll) ───────────────────────────
@@ -203,95 +376,118 @@ class _FeedTab extends ConsumerStatefulWidget {
 }
 
 class _FeedTabState extends ConsumerState<_FeedTab> {
-  final _scrollCtrl = ScrollController();
+  bool _isLoadingMore = false;
+  bool _loadGuard = false; // synchronous guard — prevents duplicate calls before setState
 
-  @override
-  void initState() {
-    super.initState();
-    _scrollCtrl.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollCtrl.removeListener(_onScroll);
-    _scrollCtrl.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    // Trigger load-more when within 300px of the list bottom
-    if (_scrollCtrl.position.pixels >=
-        _scrollCtrl.position.maxScrollExtent - 300) {
-      ref.read(feedProvider(widget.hubType).notifier).loadMore();
+  Future<void> _loadMore() async {
+    if (_loadGuard) return;
+    _loadGuard = true;
+    setState(() => _isLoadingMore = true);
+    try {
+      await ref.read(feedProvider(widget.hubType).notifier).loadMore();
+    } finally {
+      _loadGuard = false;
+      if (mounted) setState(() => _isLoadingMore = false);
     }
+  }
+
+  bool _onScrollNotification(ScrollNotification n) {
+    if (n is ScrollUpdateNotification && n.depth == 0) {
+      final m = n.metrics;
+      if (m.pixels >= m.maxScrollExtent - 300) _loadMore();
+    }
+    return false;
   }
 
   @override
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(feedProvider(widget.hubType));
-    final isLoadingMore =
-        ref.watch(feedLoadingMoreProvider(widget.hubType));
 
     return feedAsync.when(
       loading: () => _FeedSkeleton(),
       error: (err, _) => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.wifi_off_rounded,
-                size: 48, color: AppColors.textDarkSecondary),
-            const SizedBox(height: 12),
-            Text(
-              'Could not load feed',
-              style: AppTextStyles.titleSmall
-                  .copyWith(color: AppColors.textDarkSecondary),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => ref.invalidate(feedProvider(widget.hubType)),
-              child: const Text('Retry'),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.wifi_off_rounded,
+                  size: 48, color: AppColors.textDarkSecondary),
+              const SizedBox(height: 12),
+              Text(
+                'Could not load feed',
+                style: AppTextStyles.titleSmall
+                    .copyWith(color: AppColors.textDarkSecondary),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                err.toString(),
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textDarkTertiary),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => ref.invalidate(feedProvider(widget.hubType)),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
         ),
       ),
       data: (items) => RefreshIndicator(
         color: AppColors.secondary,
         backgroundColor: AppColors.darkSurface,
-        onRefresh: () async =>
-            ref.invalidate(feedProvider(widget.hubType)),
-        child: ListView.separated(
-          controller: _scrollCtrl,
-          padding: const EdgeInsets.only(bottom: 20),
-          itemCount: items.length + (isLoadingMore ? 1 : 0),
-          separatorBuilder: (_, __) =>
-              const Divider(height: 1, color: AppColors.darkBorder),
-          itemBuilder: (ctx, i) {
-            // Load-more spinner at the bottom
-            if (i == items.length) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.secondary,
+        onRefresh: () async => ref.invalidate(feedProvider(widget.hubType)),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _onScrollNotification,
+          child: ListView.separated(
+            padding: const EdgeInsets.only(bottom: 20),
+            itemCount: items.length + 1 + (_isLoadingMore ? 1 : 0),
+            separatorBuilder: (_, i) => i == 0
+                ? const SizedBox.shrink()
+                : const Divider(height: 1, color: AppColors.darkBorder),
+            itemBuilder: (ctx, i) {
+              if (i == 0) return const LiveStreamsRow();
+              final itemIndex = i - 1;
+              if (itemIndex == items.length) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.secondary,
+                      ),
                     ),
                   ),
-                ),
+                );
+              }
+              final item = items[itemIndex];
+              if (item.isAd) {
+                return const NativeAdCard();
+              }
+              if (item.isYouTube) {
+                final allVideos = items
+                    .where((it) => it.isYouTube)
+                    .map((it) => it.youtubeVideo!)
+                    .toList();
+                final vidIndex = allVideos.indexOf(item.youtubeVideo!);
+                return YouTubeVideoCard(
+                  video: item.youtubeVideo!,
+                  allVideos: allVideos,
+                  index: vidIndex,
+                );
+              }
+              return FeedPostCard(
+                post: item.post!,
+                hubType: widget.hubType,
+                isBoosted: item.isBoosted,
               );
-            }
-
-            final item = items[i];
-            if (item.isYouTube) {
-              return YouTubeVideoCard(video: item.youtubeVideo!);
-            }
-            return FeedPostCard(
-              post: item.post!,
-              hubType: widget.hubType,
-            );
-          },
+            },
+          ),
         ),
       ),
     );
@@ -380,7 +576,7 @@ class _ShimmerState extends State<_Shimmer> with SingleTickerProviderStateMixin 
         width: widget.width,
         height: widget.height,
         decoration: BoxDecoration(
-          color: AppColors.darkSurface2.withOpacity(_anim.value),
+          color: AppColors.darkSurface2.withValues(alpha: _anim.value),
           borderRadius: BorderRadius.circular(widget.radius),
         ),
       ),

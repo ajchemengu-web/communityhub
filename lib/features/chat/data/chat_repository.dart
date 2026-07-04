@@ -11,12 +11,14 @@ class ChatRepository {
 
   // ── Conversations ──────────────────────────────────────────
 
-  Future<List<ConversationModel>> fetchConversations() async {
+  Future<List<ConversationModel>> fetchConversations({
+    int limit = 30,
+    DateTime? cursor,
+  }) async {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return [];
 
-    // Fetch conversations where the current user is a member
-    final rows = await SupabaseService.client
+    var query = SupabaseService.client
         .from('conversation_members')
         .select('''
           last_read_at,
@@ -25,12 +27,19 @@ class ChatRepository {
             last_message_at, last_message_sender_id, created_at,
             conversation_members(
               user_id,
-              profiles!user_id(full_name, username, avatar_url)
+              users!user_id(full_name, username, avatar_url)
             )
           )
         ''')
-        .eq('user_id', uid)
-        .order('conversations(last_message_at)', ascending: false) as List<dynamic>;
+        .eq('user_id', uid);
+
+    if (cursor != null) {
+      query = query.lt('conversations(last_message_at)', cursor.toIso8601String());
+    }
+
+    final rows = await query
+        .order('conversations(last_message_at)', ascending: false)
+        .limit(limit) as List<dynamic>;
 
     return rows.map((row) {
       final convoMap =
@@ -44,7 +53,7 @@ class ChatRepository {
           .where((m) => m['user_id'] != uid)
           .map((m) {
             final p = Map<String, dynamic>.from(m as Map);
-            final profile = p['profiles'] as Map<String, dynamic>? ?? {};
+            final profile = p['users'] as Map<String, dynamic>? ?? {};
             return ParticipantModel(
               userId: p['user_id'] as String,
               fullName: profile['full_name'] as String?,
@@ -54,8 +63,6 @@ class ChatRepository {
           })
           .toList();
 
-      // Count unread messages
-      final lastReadAt = row['last_read_at'] as String?;
       // (actual unread count would come from a server function; approximate here)
       convoMap['unread_count'] = 0;
 
@@ -111,7 +118,7 @@ class ChatRepository {
           last_message_at, last_message_sender_id, created_at,
           conversation_members(
             user_id,
-            profiles!user_id(full_name, username, avatar_url)
+            users!user_id(full_name, username, avatar_url)
           )
         ''')
         .eq('id', convoId)
@@ -144,23 +151,23 @@ class ChatRepository {
   }) async {
     final uid = SupabaseService.currentUserId!;
 
-    var query = SupabaseService.client
+    var baseQuery = SupabaseService.client
         .from('messages')
         .select('''
           id, conversation_id, sender_id, content, type, media_url,
           media_thumbnail_url, reply_to_id, is_deleted, reactions,
           call_type, call_duration, call_status, created_at,
-          profiles!sender_id(full_name, username, avatar_url)
+          users!sender_id(full_name, username, avatar_url)
         ''')
-        .eq('conversation_id', conversationId)
-        .order('created_at', ascending: false)
-        .limit(limit + 1);
+        .eq('conversation_id', conversationId);
 
     if (cursor != null) {
-      query = query.lt('created_at', cursor.toIso8601String());
+      baseQuery = baseQuery.lt('created_at', cursor.toIso8601String());
     }
 
-    final rows = await query as List<dynamic>;
+    final rows = await baseQuery
+        .order('created_at', ascending: false)
+        .limit(limit + 1) as List<dynamic>;
     final hasMore = rows.length > limit;
     final slice = hasMore ? rows.sublist(0, limit) : rows;
 
@@ -203,7 +210,7 @@ class ChatRepository {
           'call_status': callStatus,
         })
         .select(
-            'id, conversation_id, sender_id, content, type, media_url, media_thumbnail_url, reply_to_id, is_deleted, reactions, call_type, call_duration, call_status, created_at, profiles!sender_id(full_name, username, avatar_url)')
+            'id, conversation_id, sender_id, content, type, media_url, media_thumbnail_url, reply_to_id, is_deleted, reactions, call_type, call_duration, call_status, created_at, users!sender_id(full_name, username, avatar_url)')
         .single() as Map<String, dynamic>;
 
     // Update conversation last_message
@@ -227,11 +234,11 @@ class ChatRepository {
     final path = 'chat/$conversationId/$uid/${DateTime.now().millisecondsSinceEpoch}.$ext';
 
     await SupabaseService.client.storage
-        .from('chat-media')
+        .from('chat_media')
         .upload(path, file);
 
     return SupabaseService.client.storage
-        .from('chat-media')
+        .from('chat_media')
         .getPublicUrl(path);
   }
 

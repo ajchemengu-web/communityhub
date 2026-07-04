@@ -29,88 +29,179 @@ class FeedRepository {
   }) async {
     final uid = SupabaseService.currentUserId;
 
-    // 1. Build the post query
+    // 1. Build the post query — join author info; no moderation filter so all posts show
     var query = _db
         .from('posts')
-        .select('*, users(username, full_name, avatar_url, is_verified)')
-        .eq('moderation_status', AppConstants.statusApproved)
-        .order('created_at', ascending: false)
-        .limit(limit + 1); // fetch one extra to detect hasMore
+        .select('*, users!posts_author_id_fkey(username, full_name, avatar_url, is_verified)');
 
     if (hubType != AppConstants.hubAll) {
-      query = query.eq('hub_type', hubType);
+      // For parent hubs include all their sub-hubs
+      if (hubType == AppConstants.hubScience) {
+        final types = [AppConstants.hubScience, ...AppConstants.scienceSubHubs];
+        query = query.inFilter('hub_type', types);
+      } else if (hubType == AppConstants.hubTechnology) {
+        final types = [AppConstants.hubTechnology, ...AppConstants.technologySubHubs];
+        query = query.inFilter('hub_type', types);
+      } else if (hubType == AppConstants.hubLanguages) {
+        final types = [AppConstants.hubLanguages, ...AppConstants.languageSubHubs];
+        query = query.inFilter('hub_type', types);
+      } else {
+        query = query.eq('hub_type', hubType);
+      }
     }
 
     if (cursor != null) {
       query = query.lt('created_at', cursor.toIso8601String());
     }
 
-    final rows = await query as List<dynamic>;
+    List<dynamic> rows = await query
+        .order('created_at', ascending: false)
+        .limit(limit + 1) as List<dynamic>;
 
-    final hasMore = rows.length > limit;
-    final pageRows =
-        hasMore ? rows.sublist(0, limit) : rows;
-
-    // 2. Fetch liked post IDs for this batch (single round-trip)
-    Set<String> likedIds = {};
-    if (uid != null && pageRows.isNotEmpty) {
-      final postIds =
-          pageRows.map((r) => r['id'] as String).toList();
-      final liked = await _db
-          .from('post_likes')
-          .select('post_id')
-          .eq('user_id', uid)
-          .inFilter('post_id', postIds) as List<dynamic>;
-      likedIds = liked.map((r) => r['post_id'] as String).toSet();
+    // If hub filter returns nothing, fall back to all posts (hub_type may be null on old posts)
+    if (rows.isEmpty && hubType != AppConstants.hubAll) {
+      rows = await _db
+          .from('posts')
+          .select('*, users!posts_author_id_fkey(username, full_name, avatar_url, is_verified)')
+          .order('created_at', ascending: false)
+          .limit(limit + 1) as List<dynamic>;
     }
 
-    final posts = pageRows.map((row) {
-      final m = Map<String, dynamic>.from(row as Map);
-      m['is_liked'] = likedIds.contains(row['id'] as String);
-      return PostModel.fromMap(m);
-    }).toList();
+    final hasMore = rows.length > limit;
+    final pageRows = hasMore ? rows.sublist(0, limit) : rows;
+
+    final posts = await _enrichAndMapRows(pageRows, uid);
 
     return FeedPage(posts: posts, hasMore: hasMore);
   }
 
+  /// Fetches specific posts by id (used to surface boosted posts that
+  /// weren't already part of the loaded feed page).
+  Future<List<PostModel>> fetchPostsByIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+    final uid = SupabaseService.currentUserId;
+
+    final rows = await _db
+        .from('posts')
+        .select('*, users!posts_author_id_fkey(username, full_name, avatar_url, is_verified)')
+        .inFilter('id', ids) as List<dynamic>;
+
+    return _enrichAndMapRows(rows, uid);
+  }
+
+  /// Attaches liked/bookmarked flags for the current user and maps rows
+  /// to [PostModel]s. Shared by [fetchPosts] and [fetchPostsByIds].
+  Future<List<PostModel>> _enrichAndMapRows(
+      List<dynamic> rows, String? uid) async {
+    Set<String> likedIds = {};
+    Set<String> bookmarkedIds = {};
+    if (uid != null && rows.isNotEmpty) {
+      try {
+        final postIds = rows.map((r) => r['id'] as String).toList();
+        final results = await Future.wait([
+          _db
+              .from('post_likes')
+              .select('post_id')
+              .eq('user_id', uid)
+              .inFilter('post_id', postIds) as Future<dynamic>,
+          _db
+              .from('bookmarks')
+              .select('post_id')
+              .eq('user_id', uid)
+              .inFilter('post_id', postIds) as Future<dynamic>,
+        ]);
+        likedIds = (results[0] as List<dynamic>)
+            .map((r) => r['post_id'] as String)
+            .toSet();
+        bookmarkedIds = (results[1] as List<dynamic>)
+            .map((r) => r['post_id'] as String)
+            .toSet();
+      } catch (_) {}
+    }
+
+    return rows.map((row) {
+      final m = Map<String, dynamic>.from(row as Map);
+      m['is_liked'] = likedIds.contains(row['id'] as String);
+      m['is_bookmarked'] = bookmarkedIds.contains(row['id'] as String);
+      return PostModel.fromMap(m);
+    }).toList();
+  }
+
   // ── YouTube cache ─────────────────────────────────────────
 
-  /// Returns cached YouTube videos from Supabase (never hits the YT API).
+  /// Returns YouTube videos — tries Supabase cache first,
+  /// falls back to live YouTube Data API v3 when cache is empty.
   Future<List<YouTubeVideo>> fetchCachedVideos({
     required String hubType,
-    int limit = 8,
+    int limit = 10,
+    int offset = 0,
   }) async {
+    // 1. Try Supabase cache
     try {
       var query = _db
           .from('youtube_cache')
           .select()
-          .gt('expires_at', DateTime.now().toIso8601String())
-          .order('fetch_score', ascending: false)
-          .limit(limit);
+          .gt('expires_at', DateTime.now().toIso8601String());
 
       if (hubType != AppConstants.hubAll) {
         query = query.eq('hub_type', hubType);
       }
 
-      final rows = await query as List<dynamic>;
+      final rows = await query
+          .order('fetch_score', ascending: false)
+          .range(offset, offset + limit - 1) as List<dynamic>;
 
-      return rows.map((yt) {
-        final m = Map<String, dynamic>.from(yt as Map);
-        return YouTubeVideo(
-          id: m['youtube_id'] as String,
-          title: m['title'] as String,
-          description: m['description'] as String? ?? '',
-          channelId: m['channel_id'] as String,
-          channelTitle: m['channel_title'] as String,
-          thumbnailUrl: m['thumbnail_url'] as String,
-          publishedAt:
-              DateTime.tryParse(m['published_at'] as String? ?? '') ??
-                  DateTime.now(),
-          viewCount: m['view_count'] as int?,
-          likeCount: m['like_count'] as int?,
-          duration: m['duration'] as String?,
-        );
-      }).toList();
+      if (rows.isNotEmpty) {
+        return rows.map((yt) {
+          final m = Map<String, dynamic>.from(yt as Map);
+          return YouTubeVideo(
+            id: m['youtube_id'] as String,
+            title: m['title'] as String,
+            description: m['description'] as String? ?? '',
+            channelId: m['channel_id'] as String,
+            channelTitle: m['channel_title'] as String,
+            thumbnailUrl: m['thumbnail_url'] as String,
+            publishedAt:
+                DateTime.tryParse(m['published_at'] as String? ?? '') ??
+                    DateTime.now(),
+            viewCount: m['view_count'] as int?,
+            likeCount: m['like_count'] as int?,
+            duration: m['duration'] as String?,
+          );
+        }).toList();
+      }
+    } catch (_) {}
+
+    // 2. Cache empty — fetch live from YouTube API
+    return _fetchLiveYouTube(hubType: hubType, limit: limit);
+  }
+
+  Future<List<YouTubeVideo>> _fetchLiveYouTube({
+    required String hubType,
+    int limit = 10,
+  }) async {
+    try {
+      final yt = YouTubeService.instance;
+      if (AppConstants.youtubeApiKey == 'YOUR_YOUTUBE_API_KEY') return [];
+
+      if (hubType == AppConstants.hubAll) {
+        // Mix faith + science + technology + languages evenly
+        final quarter = (limit / 4).ceil();
+        final results = await Future.wait([
+          yt.getFaithFeed(maxResults: quarter),
+          yt.getHubFeed(hubType: AppConstants.hubScience, maxResults: quarter),
+          yt.getHubFeed(hubType: AppConstants.hubTechnology, maxResults: quarter),
+          yt.getHubFeed(hubType: AppConstants.hubLanguages, maxResults: quarter),
+        ]);
+        final merged = [...results[0], ...results[1], ...results[2], ...results[3]];
+        merged.shuffle();
+        return merged.take(limit).toList();
+      } else if (hubType == AppConstants.hubFaith) {
+        return await yt.getFaithFeed(maxResults: limit);
+      } else {
+        // All other hubs (career/technology, science, sub-hubs, languages)
+        return await yt.getHubFeed(hubType: hubType, maxResults: limit);
+      }
     } catch (_) {
       return [];
     }
@@ -168,7 +259,8 @@ class FeedRepository {
 
   /// Toggles the like on [postId] for the current user.
   /// Returns the updated like count, or null on failure.
-  Future<int?> toggleLike(String postId, {required bool isCurrentlyLiked}) async {
+  Future<int?> toggleLike(String postId,
+      {required bool isCurrentlyLiked}) async {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return null;
 
@@ -198,6 +290,34 @@ class FeedRepository {
       return result['likes_count'] as int? ?? 0;
     } catch (_) {
       return null;
+    }
+  }
+
+  // ── Bookmarks ─────────────────────────────────────────────
+
+  /// Toggles bookmark on [postId]. Returns new bookmarked state.
+  Future<bool> toggleBookmark(String postId,
+      {required bool isCurrentlyBookmarked}) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return isCurrentlyBookmarked;
+
+    try {
+      if (isCurrentlyBookmarked) {
+        await _db
+            .from('bookmarks')
+            .delete()
+            .eq('post_id', postId)
+            .eq('user_id', uid);
+        return false;
+      } else {
+        await _db.from('bookmarks').upsert({
+          'post_id': postId,
+          'user_id': uid,
+        });
+        return true;
+      }
+    } catch (_) {
+      return isCurrentlyBookmarked;
     }
   }
 }

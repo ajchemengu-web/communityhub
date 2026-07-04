@@ -70,17 +70,19 @@ class CommunityDetailNotifier
 
   Future<void> _load() async {
     try {
-      final results = await Future.wait([
-        _repo.fetchCommunity(communityId),
-        _repo.fetchAnnouncements(communityId),
-        _repo.fetchMembers(communityId),
-        _repo.fetchCommunityPosts(communityId, limit: _pageSize),
-      ]);
+      // Fetch community first — if this fails, show error immediately
+      final community = await _repo.fetchCommunity(communityId);
 
-      final community = results[0] as CommunityModel;
-      final announcements = results[1] as List<AnnouncementModel>;
-      final members = results[2] as List<Map<String, dynamic>>;
-      final postRows = results[3] as List<Map<String, dynamic>>;
+      // Fetch supporting data independently — failures don't block the page
+      final announcements = await _repo
+          .fetchAnnouncements(communityId)
+          .catchError((_) => <AnnouncementModel>[]);
+      final members = await _repo
+          .fetchMembers(communityId)
+          .catchError((_) => <Map<String, dynamic>>[]);
+      final postRows = await _repo
+          .fetchCommunityPosts(communityId, limit: _pageSize)
+          .catchError((_) => <Map<String, dynamic>>[]);
 
       final hasMore = postRows.length > _pageSize;
       final postSlice = hasMore ? postRows.sublist(0, _pageSize) : postRows;

@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../../core/services/supabase_service.dart';
 import '../domain/models/comment_model.dart';
 
@@ -32,35 +34,76 @@ class PostRepository {
       final ext = file.path.split('.').last.toLowerCase();
       final fileName = '${uid}_${DateTime.now().millisecondsSinceEpoch}.$ext';
       final bytes = await file.readAsBytes();
+      final contentType = ext == 'mp4' || ext == 'mov' ? 'video/mp4' : 'image/jpeg';
 
-      await _db.storage.from('post_media').uploadBinary(
-            'posts/$fileName',
-            bytes,
-            fileOptions: FileOptions(
-              contentType:
-                  ext == 'mp4' || ext == 'mov' ? 'video/mp4' : 'image/jpeg',
-              upsert: false,
-            ),
-          );
+      // Try known bucket name variants in order
+      final bucketCandidates = ['post-media', 'post_media', 'posts', 'media'];
+      String? uploadedUrl;
 
-      final url =
-          _db.storage.from('post_media').getPublicUrl('posts/$fileName');
-      mediaUrls.add(url);
+      for (final bucket in bucketCandidates) {
+        try {
+          await _db.storage.from(bucket).uploadBinary(
+                'posts/$fileName',
+                bytes,
+                fileOptions: FileOptions(
+                  contentType: contentType,
+                  upsert: true,
+                ),
+              );
+          uploadedUrl = _db.storage.from(bucket).getPublicUrl('posts/$fileName');
+          break; // success — stop trying
+        } catch (e) {
+          if (e.toString().contains('Bucket not found') ||
+              e.toString().contains('404')) {
+            continue; // try next bucket name
+          }
+          rethrow; // different error — surface it
+        }
+      }
+
+      if (uploadedUrl == null) {
+        throw Exception(
+          'Storage bucket not found. Please create a bucket named "post-media" '
+          'in your Supabase project under Storage.',
+        );
+      }
+      mediaUrls.add(uploadedUrl);
     }
 
-    // 2. Insert the post row
-    final row = await _db.from('posts').insert({
-      'user_id': uid,
-      'caption': caption.trim(),
-      'hub_type': hubType,
-      'media_urls': mediaUrls,
+    // 2. Insert the post row — strip unknown columns automatically
+    final postPayload = <String, dynamic>{
+      'author_id': uid,
+      'content': caption.trim(),
+      'media_url': mediaUrls.isNotEmpty ? mediaUrls.first : null,
       'media_type': mediaType,
+      'media_thumbnail': mediaUrls.isNotEmpty ? mediaUrls.first : null,
+      'hub_type': hubType,
       'tags': tags,
       'youtube_url': youtubeUrl,
-      'moderation_status': 'approved', // TODO: add AI filter in Day 6
-    }).select('id').single();
+      'moderation_status': 'approved',
+    };
+    final postOptional = [
+      'hub_type', 'media_url', 'media_type', 'media_thumbnail',
+      'tags', 'youtube_url', 'moderation_status',
+    ];
+    Map<String, dynamic> row;
+    while (true) {
+      try {
+        row = await _db.from('posts').insert(postPayload).select('id').single()
+            as Map<String, dynamic>;
+        break;
+      } catch (e) {
+        final msg = e.toString();
+        final badKey = postOptional.firstWhere(
+          (k) => msg.contains("'$k'") && postPayload.containsKey(k),
+          orElse: () => '',
+        );
+        if (badKey.isEmpty) rethrow;
+        postPayload.remove(badKey);
+      }
+    }
 
-    return row['id'] as String;
+    return row['id'] as String? ?? '';
   }
 
   // ── Fetch single post ──────────────────────────────────────

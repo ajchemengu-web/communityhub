@@ -96,7 +96,7 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
           schema: 'public',
           table: 'messages',
           filter: PostgresChangeFilter(
-            type: FilterType.eq,
+            type: PostgresChangeFilterType.eq,
             column: 'conversation_id',
             value: conversationId,
           ),
@@ -113,7 +113,7 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
               final full = await SupabaseService.client
                   .from('messages')
                   .select(
-                      'id, conversation_id, sender_id, content, type, media_url, media_thumbnail_url, reply_to_id, is_deleted, reactions, call_type, call_duration, call_status, created_at, profiles!sender_id(full_name, username, avatar_url)')
+                      'id, conversation_id, sender_id, content, type, media_url, media_thumbnail_url, reply_to_id, is_deleted, reactions, call_type, call_duration, call_status, created_at, users!sender_id(full_name, username, avatar_url)')
                   .eq('id', row['id'] as String)
                   .single() as Map<String, dynamic>;
 
@@ -129,7 +129,7 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
           schema: 'public',
           table: 'messages',
           filter: PostgresChangeFilter(
-            type: FilterType.eq,
+            type: PostgresChangeFilterType.eq,
             column: 'conversation_id',
             value: conversationId,
           ),
@@ -322,9 +322,13 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
   void broadcastTyping(bool isTyping) {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return;
+    final meta = SupabaseService.currentUser?.userMetadata;
+    final name = meta?['full_name'] as String? ??
+        meta?['name'] as String? ??
+        'Someone';
     _typingChannel?.sendBroadcastMessage(
       event: 'typing',
-      payload: {'user_id': uid, 'typing': isTyping, 'name': 'You'},
+      payload: {'user_id': uid, 'typing': isTyping, 'name': name},
     );
 
     if (isTyping) {

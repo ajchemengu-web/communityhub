@@ -9,7 +9,7 @@ class NotificationsRepository {
 
   static const _select = '''
     id, user_id, type, title, body, data, is_read, created_at, actor_id,
-    actor:profiles!actor_id(full_name, avatar_url)
+    actor:users!actor_id(full_name, avatar_url)
   ''';
 
   // ── Fetch ──────────────────────────────────────────────────────
@@ -118,6 +118,10 @@ class NotificationsRepository {
         return 'post_like';
       case NotificationType.postComment:
         return 'post_comment';
+      case NotificationType.follow:
+        return 'follow';
+      case NotificationType.commentLike:
+        return 'comment_like';
       case NotificationType.eventRsvp:
         return 'event_rsvp';
       case NotificationType.communityJoin:

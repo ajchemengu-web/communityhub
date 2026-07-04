@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/constants/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../domain/models/story_model.dart';
@@ -36,17 +35,31 @@ class StoryRow extends ConsumerWidget {
     List<StoryModel> stories,
     StoryModel? myStory,
   ) {
+    // Group stories by userId for the viewer
+    final grouped = <String, List<StoryModel>>{};
+    for (final s in stories) {
+      grouped.putIfAbsent(s.userId, () => []).add(s);
+    }
+    final userIds = grouped.keys.toList();
+
     return ListView.separated(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: 1 + stories.length, // +1 for "Your Story" bubble
+      itemCount: 1 + userIds.length,
       separatorBuilder: (_, __) => const SizedBox(width: 12),
       itemBuilder: (ctx, i) {
         if (i == 0) {
-          return _AddStoryBubble(hasActiveStory: myStory != null);
+          return _AddStoryBubble(
+            hasActiveStory: myStory != null,
+            myStory: myStory,
+          );
         }
-        final story = stories[i - 1];
-        return _StoryBubble(story: story);
+        final uid = userIds[i - 1];
+        final userStories = grouped[uid]!;
+        return _StoryBubble(
+          story: userStories.first,
+          allStories: userStories,
+        );
       },
     );
   }
@@ -55,13 +68,26 @@ class StoryRow extends ConsumerWidget {
 // ── Add Story Bubble ──────────────────────────────────────────
 
 class _AddStoryBubble extends StatelessWidget {
-  const _AddStoryBubble({required this.hasActiveStory});
+  const _AddStoryBubble({
+    required this.hasActiveStory,
+    this.myStory,
+  });
   final bool hasActiveStory;
+  final StoryModel? myStory;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {/* navigate to story creator */},
+      onTap: () {
+        if (hasActiveStory && myStory != null) {
+          context.push('/stories/${myStory!.userId}', extra: {
+            'stories': [myStory!],
+            'index': 0,
+          });
+        } else {
+          context.push('/story/create');
+        }
+      },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -133,15 +159,22 @@ class _AddStoryBubble extends StatelessWidget {
 // ── Story Bubble ──────────────────────────────────────────────
 
 class _StoryBubble extends StatelessWidget {
-  const _StoryBubble({required this.story});
+  const _StoryBubble({
+    required this.story,
+    required this.allStories,
+  });
   final StoryModel story;
+  final List<StoryModel> allStories;
 
   @override
   Widget build(BuildContext context) {
-    final hasUnseen = !story.isSeen;
+    final hasUnseen = allStories.any((s) => !s.isSeen);
 
     return GestureDetector(
-      onTap: () => context.push('/stories/${story.userId}'),
+      onTap: () => context.push(
+        '/stories/${story.userId}',
+        extra: {'stories': allStories, 'index': 0},
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

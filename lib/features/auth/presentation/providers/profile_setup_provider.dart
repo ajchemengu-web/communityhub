@@ -23,6 +23,7 @@ class ProfileSetupState {
     this.avatarUrl = '',
     this.usernameStatus = UsernameStatus.idle,
     // Step 2
+    this.religion = '',
     this.bio = '',
     this.hubPreference = 'all',
     this.churchName = '',
@@ -42,8 +43,9 @@ class ProfileSetupState {
   final UsernameStatus usernameStatus;
 
   // Step 2
+  final String religion; // 'christian' | 'muslim' | ''
   final String bio;
-  final String hubPreference; // 'all' | 'faith' | 'career'
+  final String hubPreference; // 'all' | 'faith' | 'career' | 'christianity' | 'islam'
   final String churchName;
   final String website;
 
@@ -58,7 +60,7 @@ class ProfileSetupState {
       username.trim().length >= 3 &&
       usernameStatus == UsernameStatus.available;
 
-  bool get isStep2Valid => true; // bio/church/website are optional
+  bool get isStep2Valid => religion.isNotEmpty; // religion is required
 
   bool get isLoading =>
       submitStatus == SetupSubmitStatus.uploading ||
@@ -72,6 +74,7 @@ class ProfileSetupState {
     bool clearAvatar = false,
     String? avatarUrl,
     UsernameStatus? usernameStatus,
+    String? religion,
     String? bio,
     String? hubPreference,
     String? churchName,
@@ -87,6 +90,7 @@ class ProfileSetupState {
       avatarBytes: clearAvatar ? null : (avatarBytes ?? this.avatarBytes),
       avatarUrl: avatarUrl ?? this.avatarUrl,
       usernameStatus: usernameStatus ?? this.usernameStatus,
+      religion: religion ?? this.religion,
       bio: bio ?? this.bio,
       hubPreference: hubPreference ?? this.hubPreference,
       churchName: churchName ?? this.churchName,
@@ -176,6 +180,12 @@ class ProfileSetupNotifier extends StateNotifier<ProfileSetupState> {
 
   // ── Step 2 ─────────────────────────────────────────────────
 
+  void setReligion(String value) {
+    // Auto-set hub preference to match religion
+    final hub = value == 'christian' ? 'christianity' : value == 'muslim' ? 'islam' : 'all';
+    state = state.copyWith(religion: value, hubPreference: hub, clearError: true);
+  }
+
   void setBio(String value) => state = state.copyWith(bio: value);
 
   void setHubPreference(String value) =>
@@ -212,6 +222,7 @@ class ProfileSetupNotifier extends StateNotifier<ProfileSetupState> {
         website: state.website,
         churchName: state.churchName,
         hubPreference: state.hubPreference,
+        religion: state.religion,
       );
 
       state = state.copyWith(submitStatus: SetupSubmitStatus.success);

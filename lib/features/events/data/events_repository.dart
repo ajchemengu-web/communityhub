@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../../../core/services/supabase_service.dart';
+import '../../boosts/data/boosts_repository.dart';
 import '../domain/models/event_model.dart';
 
 class EventsRepository {
@@ -44,12 +45,31 @@ class EventsRepository {
 
     final rows = await (query as dynamic).order('start_time') as List;
     final uid = currentUserId ?? SupabaseService.currentUserId;
-    return rows
+    final events = rows
         .map((r) => EventModel.fromMap(
               Map<String, dynamic>.from(r as Map),
               currentUserId: uid,
             ))
         .toList();
+
+    return _withBoostedFirst(events);
+  }
+
+  /// Moves actively-boosted events to the front, otherwise preserving
+  /// the existing start_time ordering.
+  Future<List<EventModel>> _withBoostedFirst(List<EventModel> events) async {
+    if (events.isEmpty) return events;
+    try {
+      final boostedIds =
+          (await BoostsRepository.instance.fetchActiveBoostedEventIds()).toSet();
+      if (boostedIds.isEmpty) return events;
+
+      final boosted = events.where((e) => boostedIds.contains(e.id)).toList();
+      final rest = events.where((e) => !boostedIds.contains(e.id)).toList();
+      return [...boosted, ...rest];
+    } catch (_) {
+      return events;
+    }
   }
 
   // ── Fetch events the current user RSVPed to ────────────────────
@@ -60,7 +80,7 @@ class EventsRepository {
 
     final rows = await _client
         .from('event_rsvps')
-        .select('events(${ _eventSelect})')
+        .select('events($_eventSelect)')
         .eq('user_id', uid) as List;
 
     return rows

@@ -11,6 +11,7 @@ class StoryModel {
     required this.isSeen,
     required this.expiresAt,
     required this.createdAt,
+    this.caption,
   });
 
   final String id;
@@ -24,6 +25,7 @@ class StoryModel {
   // ── Content ───────────────────────────────────────────────
   final String mediaUrl;
   final String mediaType; // 'image' | 'video'
+  final String? caption;
   final bool isSeen;
 
   final DateTime expiresAt;
@@ -43,6 +45,7 @@ class StoryModel {
       isVerified: user['is_verified'] as bool? ?? false,
       mediaUrl: map['media_url'] as String? ?? '',
       mediaType: map['media_type'] as String? ?? 'image',
+      caption: map['caption'] as String?,
       isSeen: map['is_seen'] as bool? ?? false,
       expiresAt: DateTime.tryParse(map['expires_at'] as String? ?? '') ??
           DateTime.now().add(const Duration(hours: 24)),

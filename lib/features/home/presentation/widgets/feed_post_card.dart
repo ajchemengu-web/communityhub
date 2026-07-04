@@ -2,23 +2,29 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-import '../../../../core/constants/app_routes.dart';
+import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../boosts/domain/models/boost_model.dart';
+import '../../../boosts/presentation/widgets/promote_post_sheet.dart';
 import '../../domain/models/post_model.dart';
 import '../providers/feed_provider.dart';
+import '../screens/youtube_player_screen.dart';
 
 class FeedPostCard extends ConsumerStatefulWidget {
   const FeedPostCard({
     super.key,
     required this.post,
     required this.hubType,
+    this.isBoosted = false,
   });
 
   final PostModel post;
   final String hubType; // passed so the notifier can be referenced
+  final bool isBoosted;
 
   @override
   ConsumerState<FeedPostCard> createState() => _FeedPostCardState();
@@ -112,7 +118,7 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
             child: Row(
               children: [
                 // Avatar
-                _PostAvatar(url: post.avatarUrl, username: post.usernameDisplay),
+                _PostAvatar(url: post.avatarUrl ?? '', username: post.usernameDisplay),
                 const SizedBox(width: 10),
 
                 // Username + time
@@ -133,6 +139,10 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
                             const Icon(Icons.verified,
                                 size: 14,
                                 color: AppColors.verifiedBadge),
+                          ],
+                          if (widget.isBoosted) ...[
+                            const SizedBox(width: 6),
+                            const _PromotedTag(),
                           ],
                         ],
                       ),
@@ -167,25 +177,44 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
         if (hasMedia)
           GestureDetector(
             onDoubleTap: _onDoubleTap,
-            onTap: () =>
-                context.push('/post/${post.id}'),
+            onTap: () {
+              final ytId = extractYoutubeId(post.youtubeUrl) ??
+                  (post.isVideo
+                      ? extractYoutubeId(post.mediaUrls.firstOrNull)
+                      : null);
+              if (ytId != null) {
+                // YouTube video — open YouTube-style player
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => YoutubePlayerScreen.fromPost(
+                    post: post,
+                    hubType: widget.hubType,
+                  ),
+                ));
+              } else {
+                // Internal post — go to post detail
+                context.push('/post/${post.id}');
+              }
+            },
             child: Stack(
               alignment: Alignment.center,
               children: [
                 // Image / carousel
                 AspectRatio(
-                  aspectRatio: 1,
+                  aspectRatio: post.isVideo ? 16 / 9 : 1,
                   child: isMulti
                       ? _MediaCarousel(
                           mediaUrls: post.mediaUrls,
-                          mediaTypes: post.mediaTypes,
+                          isVideo: post.isVideo,
+                          youtubeId: extractYoutubeId(post.youtubeUrl),
                           controller: _pageCtrl,
                           onPageChanged: (i) =>
                               setState(() => _currentPage = i),
                         )
                       : _MediaItem(
                           url: post.mediaUrls.first,
-                          isVideo: post.firstIsVideo,
+                          isVideo: post.isVideo,
+                          youtubeId: extractYoutubeId(post.youtubeUrl) ??
+                              extractYoutubeId(post.mediaUrls.firstOrNull),
                         ),
                 ),
 
@@ -264,7 +293,11 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
 
               // Share button
               GestureDetector(
-                onTap: () {},
+                onTap: () => Share.share(
+                  post.caption.isNotEmpty
+                      ? '${post.usernameDisplay}: ${post.caption}'
+                      : 'Check out this post on CommunityHub!',
+                ),
                 child: const Icon(
                   Icons.send_outlined,
                   color: AppColors.textDarkPrimary,
@@ -276,11 +309,23 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
 
               // Bookmark
               GestureDetector(
-                onTap: () {},
-                child: const Icon(
-                  Icons.bookmark_border_rounded,
-                  color: AppColors.textDarkPrimary,
-                  size: 24,
+                onTap: () => ref
+                    .read(feedProvider(widget.hubType).notifier)
+                    .toggleBookmark(post.id),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder: (child, anim) =>
+                      ScaleTransition(scale: anim, child: child),
+                  child: Icon(
+                    post.isBookmarkedByCurrentUser
+                        ? Icons.bookmark_rounded
+                        : Icons.bookmark_border_rounded,
+                    key: ValueKey(post.isBookmarkedByCurrentUser),
+                    color: post.isBookmarkedByCurrentUser
+                        ? AppColors.secondary
+                        : AppColors.textDarkPrimary,
+                    size: 24,
+                  ),
                 ),
               ),
             ],
@@ -378,8 +423,32 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
                   style: AppTextStyles.bodyLarge.copyWith(
                     color: AppColors.textDarkPrimary,
                   )),
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                Navigator.pop(context);
+                Share.share(
+                  widget.post.caption.isNotEmpty
+                      ? '${widget.post.usernameDisplay}: ${widget.post.caption}'
+                      : 'Check out this post on CommunityHub!',
+                );
+              },
             ),
+            if (widget.post.userId == SupabaseService.currentUserId)
+              ListTile(
+                leading: const Icon(Icons.trending_up_rounded,
+                    color: AppColors.secondary),
+                title: Text('Promote post',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.secondary,
+                    )),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await showPromoteSheet(
+                    context,
+                    targetType: BoostTargetType.post,
+                    targetId: widget.post.id,
+                  );
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.flag_outlined,
                   color: AppColors.textDarkPrimary),
@@ -406,6 +475,30 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
   }
 }
 
+class _PromotedTag extends StatelessWidget {
+  const _PromotedTag();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.secondary.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: AppColors.secondary.withValues(alpha: 0.4)),
+      ),
+      child: const Text(
+        'Promoted',
+        style: TextStyle(
+          color: AppColors.secondary,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Media carousel
 // ─────────────────────────────────────────────────────────────
@@ -413,15 +506,17 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
 class _MediaCarousel extends StatelessWidget {
   const _MediaCarousel({
     required this.mediaUrls,
-    required this.mediaTypes,
+    required this.isVideo,
     required this.controller,
     required this.onPageChanged,
+    this.youtubeId,
   });
 
   final List<String> mediaUrls;
-  final List<String> mediaTypes;
+  final bool isVideo;
   final PageController controller;
   final ValueChanged<int> onPageChanged;
+  final String? youtubeId;
 
   @override
   Widget build(BuildContext context) {
@@ -431,25 +526,36 @@ class _MediaCarousel extends StatelessWidget {
       itemCount: mediaUrls.length,
       itemBuilder: (_, i) => _MediaItem(
         url: mediaUrls[i],
-        isVideo: mediaTypes.length > i && mediaTypes[i] == 'video',
+        isVideo: isVideo,
+        youtubeId: i == 0 ? youtubeId : null,
       ),
     );
   }
 }
 
 class _MediaItem extends StatelessWidget {
-  const _MediaItem({required this.url, required this.isVideo});
+  const _MediaItem({
+    required this.url,
+    required this.isVideo,
+    this.youtubeId,
+  });
 
   final String url;
   final bool isVideo;
+  final String? youtubeId;
 
   @override
   Widget build(BuildContext context) {
+    // For YouTube videos, use the hq YouTube thumbnail directly
+    final displayUrl = youtubeId != null
+        ? 'https://img.youtube.com/vi/$youtubeId/hqdefault.jpg'
+        : url;
+
     return Stack(
       fit: StackFit.expand,
       children: [
         CachedNetworkImage(
-          imageUrl: url,
+          imageUrl: displayUrl,
           fit: BoxFit.cover,
           placeholder: (_, __) =>
               Container(color: AppColors.darkSurface2),
@@ -460,8 +566,8 @@ class _MediaItem extends StatelessWidget {
           ),
         ),
         if (isVideo)
-          const Center(
-            child: _VideoPlayOverlay(),
+          Center(
+            child: _VideoPlayOverlay(isYoutube: youtubeId != null),
           ),
       ],
     );
@@ -469,15 +575,29 @@ class _MediaItem extends StatelessWidget {
 }
 
 class _VideoPlayOverlay extends StatelessWidget {
-  const _VideoPlayOverlay();
+  const _VideoPlayOverlay({this.isYoutube = false});
+  final bool isYoutube;
 
   @override
   Widget build(BuildContext context) {
+    if (isYoutube) {
+      // Red YouTube-style play button
+      return Container(
+        width: 56,
+        height: 40,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF0000),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Icon(Icons.play_arrow_rounded,
+            color: Colors.white, size: 30),
+      );
+    }
     return Container(
       width: 52,
       height: 52,
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.55),
+        color: Colors.black.withValues(alpha: 0.55),
         shape: BoxShape.circle,
       ),
       child: const Icon(Icons.play_arrow_rounded,

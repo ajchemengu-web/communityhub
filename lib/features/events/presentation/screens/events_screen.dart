@@ -154,7 +154,7 @@ class _TypeFilterRow extends ConsumerWidget {
 
 // ── Event list ─────────────────────────────────────────────────────
 
-class _EventList extends StatelessWidget {
+class _EventList extends ConsumerWidget {
   const _EventList({
     required this.events,
     required this.emptyMessage,
@@ -166,7 +166,7 @@ class _EventList extends StatelessWidget {
   final IconData emptyIcon;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (events.isEmpty) {
       return _EmptyState(message: emptyMessage, icon: emptyIcon);
     }
@@ -175,11 +175,7 @@ class _EventList extends StatelessWidget {
       color: AppColors.primary,
       backgroundColor: AppColors.darkSurface,
       onRefresh: () =>
-          // ignore: invalid_use_of_protected_member
-          (context as dynamic).findAncestorStateOfType<_EventsScreenState>() !=
-                  null
-              ? Future.value()
-              : Future.value(),
+          ref.read(eventsProvider.notifier).refresh(),
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: events.length,

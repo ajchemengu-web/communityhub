@@ -85,7 +85,7 @@ abstract class AppTheme {
       ),
 
       // Card
-      cardTheme: const CardTheme(
+      cardTheme: const CardThemeData(
         color: AppColors.darkSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -170,7 +170,7 @@ abstract class AppTheme {
       // Chip
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.darkSurface2,
-        selectedColor: AppColors.primary.withOpacity(0.3),
+        selectedColor: AppColors.primary.withValues(alpha: 0.3),
         labelStyle: AppTextStyles.labelMedium.copyWith(color: AppColors.textDarkPrimary),
         side: const BorderSide(color: AppColors.darkBorder),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -208,13 +208,13 @@ abstract class AppTheme {
         ),
         trackColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? AppColors.secondary.withOpacity(0.3)
+              ? AppColors.secondary.withValues(alpha: 0.3)
               : AppColors.darkSurface2,
         ),
       ),
 
       // Tab Bar
-      tabBarTheme: const TabBarTheme(
+      tabBarTheme: const TabBarThemeData(
         labelColor: AppColors.secondary,
         unselectedLabelColor: AppColors.textDarkSecondary,
         indicatorColor: AppColors.secondary,
@@ -287,7 +287,7 @@ abstract class AppTheme {
         ),
       ),
 
-      cardTheme: const CardTheme(
+      cardTheme: const CardThemeData(
         color: AppColors.lightSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,

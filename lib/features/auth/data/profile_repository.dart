@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -35,6 +34,12 @@ class ProfileRepository {
 
     final path = '$uid/avatar.$extension';
 
+    // Ensure bucket exists
+    try {
+      await SupabaseService.storage
+          .createBucket('avatars', const BucketOptions(public: true));
+    } catch (_) {}
+
     await SupabaseService.storage.from('avatars').uploadBinary(
           path,
           imageBytes,
@@ -59,6 +64,7 @@ class ProfileRepository {
     String website = '',
     String churchName = '',
     String hubPreference = 'all',
+    String religion = '',
   }) async {
     final uid = SupabaseService.currentUserId;
     if (uid == null) throw Exception('Not authenticated');
@@ -72,6 +78,7 @@ class ProfileRepository {
       'website': website.trim(),
       'church_name': churchName.trim(),
       'hub_preference': hubPreference,
+      'religion': religion,
       'updated_at': DateTime.now().toIso8601String(),
     });
   }

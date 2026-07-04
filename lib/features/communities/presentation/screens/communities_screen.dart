@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,443 +6,447 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../auth/presentation/providers/current_user_provider.dart';
+import '../../../scriptures/presentation/screens/bible_screen.dart';
+import '../../../scriptures/presentation/screens/quran_screen.dart';
 import '../../domain/models/community_model.dart';
 import '../providers/communities_provider.dart';
 
-class CommunitiesScreen extends ConsumerStatefulWidget {
+class CommunitiesScreen extends ConsumerWidget {
   const CommunitiesScreen({super.key});
 
   @override
-  ConsumerState<CommunitiesScreen> createState() =>
-      _CommunitiesScreenState();
-}
-
-class _CommunitiesScreenState extends ConsumerState<CommunitiesScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabCtrl;
-  final _searchCtrl = TextEditingController();
-  Timer? _debounce;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabCtrl.dispose();
-    _searchCtrl.dispose();
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  void _onSearch(String q) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), () {
-      ref.read(communitiesProvider.notifier).setSearch(q);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(communitiesProvider);
+    final religionAsync = ref.watch(currentReligionProvider);
+    final religion = religionAsync.valueOrNull ?? '';
 
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
-      body: SafeArea(
-        child: NestedScrollView(
-          headerSliverBuilder: (ctx, _) => [
-            SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  // ── Top bar ────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
-                    child: Row(
-                      children: [
-                        Text(
-                          'Communities',
-                          style: AppTextStyles.titleLarge.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          icon: const Icon(Icons.add_circle_outline,
-                              color: AppColors.primary),
-                          onPressed: () =>
-                              context.push(AppRoutes.createCommunity),
-                          tooltip: 'Create community',
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // ── Search ─────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-                    child: TextField(
-                      controller: _searchCtrl,
-                      onChanged: _onSearch,
-                      style: AppTextStyles.bodyMedium
-                          .copyWith(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: 'Search communities…',
-                        hintStyle: const TextStyle(
-                            color: AppColors.textMuted),
-                        prefixIcon: const Icon(Icons.search_rounded,
-                            color: AppColors.textMuted),
-                        filled: true,
-                        fillColor: AppColors.darkSurface,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 0),
-                      ),
-                    ),
-                  ),
-
-                  // ── Hub filter chips ───────────────────
-                  _HubFilterChips(
-                    selected: state.activeHubFilter,
-                    onSelected: (h) => ref
-                        .read(communitiesProvider.notifier)
-                        .setHubFilter(h),
-                  ),
-                  const SizedBox(height: 4),
-
-                  // ── Tab bar ────────────────────────────
-                  TabBar(
-                    controller: _tabCtrl,
-                    labelColor: AppColors.primary,
-                    unselectedLabelColor: AppColors.textMuted,
-                    indicatorColor: AppColors.primary,
-                    indicatorSize: TabBarIndicatorSize.label,
-                    labelStyle: AppTextStyles.labelMedium,
-                    tabs: [
-                      Tab(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text('My Communities'),
-                            if (state.myCommunities.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              _CountBadge(
-                                  count: state.myCommunities.length),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const Tab(text: 'Discover'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-          body: TabBarView(
-            controller: _tabCtrl,
-            children: [
-              // ── My Communities ─────────────────────────
-              _MyCommunitiesTab(state: state),
-
-              // ── Discover ───────────────────────────────
-              _DiscoverTab(state: state),
-            ],
+      appBar: AppBar(
+        backgroundColor: AppColors.darkBackground,
+        elevation: 0,
+        title: const Text(
+          'Communities',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            onPressed: () => _showMenu(context, ref),
+          ),
+        ],
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Hub Filter Chips
-// ─────────────────────────────────────────────────────────────────
-
-class _HubFilterChips extends StatelessWidget {
-  const _HubFilterChips(
-      {required this.selected, required this.onSelected});
-  final String selected;
-  final ValueChanged<String> onSelected;
-
-  static const _options = [
-    ('all', 'All', Icons.public_rounded),
-    ('faith', 'Faith', Icons.church_rounded),
-    ('career', 'Career', Icons.work_rounded),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: _options.map((o) {
-          final isSelected = o.$1 == selected;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: FilterChip(
-              selected: isSelected,
-              label: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(o.$3,
-                      size: 14,
-                      color: isSelected
-                          ? Colors.white
-                          : AppColors.textMuted),
-                  const SizedBox(width: 4),
-                  Text(o.$2),
-                ],
-              ),
-              labelStyle: AppTextStyles.labelMedium.copyWith(
-                color: isSelected ? Colors.white : AppColors.textMuted,
-              ),
-              backgroundColor: AppColors.darkSurface,
-              selectedColor: AppColors.primary,
-              checkmarkColor: Colors.white,
-              showCheckmark: false,
-              side: BorderSide(
-                color: isSelected
-                    ? AppColors.primary
-                    : AppColors.darkBorder,
-              ),
-              onSelected: (_) => onSelected(o.$1),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────
-// My Communities Tab
-// ─────────────────────────────────────────────────────────────────
-
-class _MyCommunitiesTab extends ConsumerWidget {
-  const _MyCommunitiesTab({required this.state});
-  final CommunitiesState state;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (state.isLoadingMine) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (state.myCommunities.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      body: RefreshIndicator(
+        color: AppColors.primary,
+        onRefresh: () => ref.read(communitiesProvider.notifier).refresh(),
+        child: ListView(
           children: [
-            const Icon(Icons.groups_rounded,
-                size: 64, color: AppColors.textMuted),
-            const SizedBox(height: 16),
-            Text(
-              'You haven\'t joined any communities yet',
-              style: AppTextStyles.titleSmall
-                  .copyWith(color: AppColors.textMuted),
-              textAlign: TextAlign.center,
+            // ── Scripture Communities (always pinned at top) ────────
+            _ScriptureSection(religion: religion),
+            const Divider(color: Colors.white10, height: 1),
+
+            // ── New community tile ─────────────────────────────────
+            _NewCommunityTile(
+              onTap: () => context.push(AppRoutes.createCommunity),
             ),
+            const Divider(color: Colors.white10, height: 1),
+
+            // ── My communities label ───────────────────────────────
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Text(
+                'MY COMMUNITIES',
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+
+            // ── Joined communities ─────────────────────────────────
+            if (state.isLoadingMine)
+              const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (state.myCommunities.isEmpty)
+              _EmptyState(
+                onCreateTap: () => context.push(AppRoutes.createCommunity),
+              )
+            else
+              ...state.myCommunities.map(
+                (c) => _CommunityRow(community: c),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMenu(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1C),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          ListTile(
+            leading: const Icon(Icons.add_circle_outline, color: Colors.white),
+            title: const Text('New community',
+                style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              context.push(AppRoutes.createCommunity);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.search, color: Colors.white),
+            title: const Text('Discover communities',
+                style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              _showDiscover(context, ref);
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  void _showDiscover(BuildContext context, WidgetRef ref) {
+    final state = ref.read(communitiesProvider);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.darkBackground,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.85,
+        maxChildSize: 0.95,
+        builder: (ctx, scrollCtrl) => Column(
+          children: [
             const SizedBox(height: 8),
-            Text(
-              'Discover faith & career communities\nand connect with your people.',
-              style: AppTextStyles.bodySmall
-                  .copyWith(color: AppColors.textDarkTertiary),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: () => context.push(AppRoutes.createCommunity),
-              icon: const Icon(Icons.add),
-              label: const Text('Create Community'),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: () =>
-          ref.read(communitiesProvider.notifier).refresh(),
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: state.myCommunities.length,
-        itemBuilder: (ctx, i) => _CommunityListTile(
-          community: state.myCommunities[i],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Discover Tab
-// ─────────────────────────────────────────────────────────────────
-
-class _DiscoverTab extends StatelessWidget {
-  const _DiscoverTab({required this.state});
-  final CommunitiesState state;
-
-  @override
-  Widget build(BuildContext context) {
-    if (state.isLoadingDiscover) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (state.discoverCommunities.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.search_off_rounded,
-                size: 48, color: AppColors.textMuted),
+            Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 12),
-            Text(
-              'No communities found',
-              style: AppTextStyles.bodyMedium
-                  .copyWith(color: AppColors.textMuted),
-            ),
+            const Text('Discover Communities',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            if (state.isLoadingDiscover)
+              const Expanded(
+                  child: Center(child: CircularProgressIndicator()))
+            else
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollCtrl,
+                  itemCount: state.discoverCommunities.length,
+                  itemBuilder: (_, i) =>
+                      _CommunityRow(community: state.discoverCommunities[i]),
+                ),
+              ),
           ],
         ),
-      );
-    }
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(12),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 0.82,
       ),
-      itemCount: state.discoverCommunities.length,
-      itemBuilder: (ctx, i) =>
-          _CommunityCard(community: state.discoverCommunities[i]),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Community List Tile (My Communities)
+// New community tile
 // ─────────────────────────────────────────────────────────────────
 
-class _CommunityListTile extends StatelessWidget {
-  const _CommunityListTile({required this.community});
-  final CommunityModel community;
+class _NewCommunityTile extends StatelessWidget {
+  const _NewCommunityTile({required this.onTap});
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      onTap: onTap,
       contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      onTap: () => context.push('/community/${community.id}'),
-      leading: _CommunityAvatar(
-        coverUrl: community.coverUrl,
-        avatarUrl: community.avatarUrl,
-        size: 48,
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      leading: Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          color: const Color(0xFF2A2A2A),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: const Icon(Icons.add, color: Colors.white, size: 28),
       ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              community.name,
-              style: AppTextStyles.bodyMedium
-                  .copyWith(color: Colors.white, fontWeight: FontWeight.w600),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (community.isVerified) ...[
-            const SizedBox(width: 4),
-            const Icon(Icons.verified, size: 14, color: AppColors.primary),
-          ],
-        ],
+      title: const Text(
+        'New community',
+        style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w500),
       ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 2),
-          Row(
-            children: [
-              _HubBadge(hubType: community.hubType),
-              const SizedBox(width: 6),
-              if (community.isPrivate)
-                const Icon(Icons.lock_outline,
-                    size: 12, color: AppColors.textMuted),
-              const SizedBox(width: 2),
-              Text(
-                '${_formatCount(community.membersCount)} members',
-                style: AppTextStyles.labelSmall
-                    .copyWith(color: AppColors.textMuted),
-              ),
-            ],
-          ),
-          if (community.userRole != null) ...[
-            const SizedBox(height: 2),
-            _RoleBadge(role: community.userRole!),
-          ],
-        ],
+      subtitle: const Text(
+        'Create a community with groups',
+        style: TextStyle(color: Colors.white38, fontSize: 12),
       ),
-      trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Community Card (Discover Grid)
+// Community row (WhatsApp-style)
 // ─────────────────────────────────────────────────────────────────
 
-class _CommunityCard extends ConsumerWidget {
-  const _CommunityCard({required this.community});
+class _CommunityRow extends StatelessWidget {
+  const _CommunityRow({required this.community});
   final CommunityModel community;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return GestureDetector(
-      onTap: () => context.push('/community/${community.id}'),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.darkSurface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.darkBorder),
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        ListTile(
+          onTap: () => context.push('/community/${community.id}'),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: _CommunityIcon(
+            avatarUrl: community.avatarUrl ?? community.coverUrl,
+            hubType: community.hubType,
+            size: 52,
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  community.name,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (community.isVerified) ...[
+                const SizedBox(width: 4),
+                const Icon(Icons.verified, size: 14, color: AppColors.primary),
+              ],
+            ],
+          ),
+          subtitle: Text(
+            '${community.membersCount} member${community.membersCount == 1 ? '' : 's'}',
+            style: const TextStyle(color: Colors.white38, fontSize: 12),
+          ),
+          trailing: community.userRole == 'admin'
+              ? Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text('Admin',
+                      style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600)),
+                )
+              : null,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Cover image ────────────────────────────
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16)),
-              child: community.coverUrl != null &&
-                      community.coverUrl!.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: community.coverUrl!,
-                      height: 90,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(
-                        height: 90,
-                        color: AppColors.primary.withOpacity(0.2),
-                      ),
-                      errorWidget: (_, __, ___) => _PlaceholderCover(
-                          hubType: community.hubType),
-                    )
-                  : _PlaceholderCover(hubType: community.hubType),
-            ),
+        const Divider(color: Colors.white10, height: 1, indent: 84),
+      ],
+    );
+  }
+}
 
-            // ── Content ───────────────────────────────
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+// ─────────────────────────────────────────────────────────────────
+// Community icon (rounded square with hub colour)
+// ─────────────────────────────────────────────────────────────────
+
+class _CommunityIcon extends StatelessWidget {
+  const _CommunityIcon({
+    required this.hubType,
+    this.avatarUrl,
+    this.size = 48,
+  });
+  final String? avatarUrl;
+  final String hubType;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = hubType == 'islam'
+        ? const Color(0xFF1A6B4A)   // green — Islamic
+        : (hubType == 'faith' || hubType == 'christianity')
+            ? const Color(0xFF1A7A6B) // teal — Christian/Faith
+            : hubType == 'career'
+                ? const Color(0xFF1A5F8A)
+                : AppColors.primary;
+
+    if (avatarUrl != null && avatarUrl!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.26),
+        child: CachedNetworkImage(
+          imageUrl: avatarUrl!,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorWidget: (_, __, ___) => _placeholder(color, size),
+        ),
+      );
+    }
+    return _placeholder(color, size);
+  }
+
+  Widget _placeholder(Color color, double sz) => Container(
+        width: sz,
+        height: sz,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(sz * 0.26),
+        ),
+        child: Icon(Icons.groups_rounded,
+            color: Colors.white, size: sz * 0.52),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Scripture Communities Section (pinned at top of communities list)
+// ─────────────────────────────────────────────────────────────────
+
+class _ScriptureSection extends StatelessWidget {
+  const _ScriptureSection({required this.religion});
+  final String religion; // 'christian' | 'muslim' | ''
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, 10),
+          child: Text(
+            'SCRIPTURE COMMUNITIES',
+            style: TextStyle(
+              color: Colors.white38,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        // Show the user's own scripture first, then the other
+        if (religion == 'muslim') ...[
+          _ScriptureTile.quran(context),
+          _ScriptureTile.bible(context),
+        ] else ...[
+          _ScriptureTile.bible(context),
+          _ScriptureTile.quran(context),
+        ],
+      ],
+    );
+  }
+}
+
+class _ScriptureTile extends StatelessWidget {
+  const _ScriptureTile({
+    required this.title,
+    required this.subtitle,
+    required this.emoji,
+    required this.bgColor,
+    required this.accentColor,
+    required this.stats,
+    required this.onTap,
+    this.isDefault = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final String emoji;
+  final Color bgColor;
+  final Color accentColor;
+  final String stats;
+  final VoidCallback onTap;
+  final bool isDefault;
+
+  factory _ScriptureTile.bible(BuildContext context) => _ScriptureTile(
+        title: 'The Holy Bible',
+        subtitle: 'King James Version • Genesis to Revelation',
+        emoji: '✝️',
+        bgColor: const Color(0xFF1A0F00),
+        accentColor: const Color(0xFFD4A847),
+        stats: '66 Books • 1,189 Chapters • Old & New Testament',
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const BibleScreen()),
+        ),
+      );
+
+  factory _ScriptureTile.quran(BuildContext context) => _ScriptureTile(
+        title: 'The Holy Quran',
+        subtitle: 'Al-Fatiha to An-Nas • Complete Scripture',
+        emoji: '☪️',
+        bgColor: const Color(0xFF001A0A),
+        accentColor: const Color(0xFF4CAF50),
+        stats: '114 Surahs • 6,236 Verses • Meccan & Medinan',
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const QuranScreen()),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: accentColor.withValues(alpha: 0.35),
+            width: 1.2,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              // Icon container
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: accentColor.withValues(alpha: 0.4), width: 1),
+                ),
+                child: Center(
+                  child: Text(emoji,
+                      style: const TextStyle(fontSize: 26)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Text
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -452,233 +454,109 @@ class _CommunityCard extends ConsumerWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            community.name,
-                            style: AppTextStyles.labelMedium.copyWith(
+                            title,
+                            style: const TextStyle(
                               color: Colors.white,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (community.isVerified)
-                          const Icon(Icons.verified,
-                              size: 12, color: AppColors.primary),
+                        if (isDefault)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: accentColor.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text('YOUR BOOK',
+                                style: TextStyle(
+                                    color: accentColor,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.8)),
+                          ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_formatCount(community.membersCount)} members',
-                      style: AppTextStyles.labelSmall
-                          .copyWith(color: AppColors.textMuted),
-                    ),
-                    const Spacer(),
-                    _HubBadge(hubType: community.hubType),
-                    const SizedBox(height: 6),
-                    // Join button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 30,
-                      child: community.isMember
-                          ? OutlinedButton(
-                              onPressed: () => context
-                                  .push('/community/${community.id}'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                side: const BorderSide(
-                                    color: AppColors.primary),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: EdgeInsets.zero,
-                              ),
-                              child: Text('View',
-                                  style: AppTextStyles.labelSmall
-                                      .copyWith(color: AppColors.primary)),
-                            )
-                          : FilledButton(
-                              onPressed: () => context
-                                  .push('/community/${community.id}'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: EdgeInsets.zero,
-                              ),
-                              child: Text(
-                                  community.isPrivate
-                                      ? 'Request'
-                                      : 'Join',
-                                  style: AppTextStyles.labelSmall
-                                      .copyWith(color: Colors.white)),
-                            ),
-                    ),
+                    const SizedBox(height: 3),
+                    Text(subtitle,
+                        style: TextStyle(
+                            color: accentColor.withValues(alpha: 0.8),
+                            fontSize: 12)),
+                    const SizedBox(height: 5),
+                    Text(stats,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 11)),
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right,
+                  color: accentColor.withValues(alpha: 0.6), size: 22),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Empty state
+// ─────────────────────────────────────────────────────────────────
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.onCreateTap});
+  final VoidCallback onCreateTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        children: [
+          const SizedBox(height: 40),
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
             ),
-          ],
-        ),
+            child: const Icon(Icons.groups_rounded,
+                size: 42, color: AppColors.primary),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Stay connected with your\ncommunities',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Start a community to connect with\npeople who share your interests.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: Colors.white54, fontSize: 13, height: 1.5),
+          ),
+          const SizedBox(height: 28),
+          FilledButton.icon(
+            onPressed: onCreateTap,
+            icon: const Icon(Icons.add),
+            label: const Text('New community'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 24, vertical: 12),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────
-// Shared micro-widgets
-// ─────────────────────────────────────────────────────────────────
-
-class _CommunityAvatar extends StatelessWidget {
-  const _CommunityAvatar(
-      {this.coverUrl, this.avatarUrl, this.size = 40});
-  final String? coverUrl;
-  final String? avatarUrl;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final url = avatarUrl ?? coverUrl;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(size * 0.25),
-      child: url != null && url.isNotEmpty
-          ? CachedNetworkImage(
-              imageUrl: url,
-              width: size,
-              height: size,
-              fit: BoxFit.cover,
-              placeholder: (_, __) =>
-                  Container(color: AppColors.primary.withOpacity(0.2)),
-              errorWidget: (_, __, ___) => _defaultAvatar(size),
-            )
-          : _defaultAvatar(size),
-    );
-  }
-
-  Widget _defaultAvatar(double sz) => Container(
-        width: sz,
-        height: sz,
-        color: AppColors.primary.withOpacity(0.2),
-        child: Icon(Icons.groups_rounded,
-            color: AppColors.primary, size: sz * 0.5),
-      );
-}
-
-class _PlaceholderCover extends StatelessWidget {
-  const _PlaceholderCover({required this.hubType});
-  final String hubType;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = hubType == 'faith'
-        ? AppColors.faithTag
-        : hubType == 'career'
-            ? AppColors.techTag
-            : AppColors.primary;
-    return Container(
-      height: 90,
-      width: double.infinity,
-      color: color.withOpacity(0.2),
-      child: Icon(
-        hubType == 'faith'
-            ? Icons.church_rounded
-            : hubType == 'career'
-                ? Icons.work_rounded
-                : Icons.groups_rounded,
-        color: color.withOpacity(0.5),
-        size: 36,
-      ),
-    );
-  }
-}
-
-class _HubBadge extends StatelessWidget {
-  const _HubBadge({required this.hubType});
-  final String hubType;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = hubType == 'faith'
-        ? AppColors.faithTag
-        : hubType == 'career'
-            ? AppColors.techTag
-            : AppColors.primary;
-    final label = hubType == 'faith'
-        ? 'Faith'
-        : hubType == 'career'
-            ? 'Career'
-            : 'All';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: AppTextStyles.labelSmall.copyWith(color: color),
-      ),
-    );
-  }
-}
-
-class _RoleBadge extends StatelessWidget {
-  const _RoleBadge({required this.role});
-  final String role;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = role == 'admin'
-        ? AppColors.secondary
-        : role == 'moderator'
-            ? AppColors.accent
-            : AppColors.textMuted;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          role == 'admin'
-              ? Icons.shield_rounded
-              : role == 'moderator'
-                  ? Icons.manage_accounts_rounded
-                  : Icons.person_rounded,
-          size: 11,
-          color: color,
-        ),
-        const SizedBox(width: 3),
-        Text(
-          role[0].toUpperCase() + role.substring(1),
-          style: AppTextStyles.labelSmall.copyWith(color: color),
-        ),
-      ],
-    );
-  }
-}
-
-class _CountBadge extends StatelessWidget {
-  const _CountBadge({required this.count});
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        '$count',
-        style: AppTextStyles.labelSmall
-            .copyWith(color: AppColors.primary, fontSize: 10),
-      ),
-    );
-  }
-}
-
-String _formatCount(int n) {
-  if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-  if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-  return '$n';
-}
-

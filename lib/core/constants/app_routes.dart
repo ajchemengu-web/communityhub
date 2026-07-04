@@ -53,6 +53,25 @@ abstract class AppRoutes {
   static const String faithHub = '/faith-hub';
   static const String careerHub = '/career-hub';
 
+  // ── Live & Camera ─────────────────────────────────────
+  static const String liveStart = '/live/start';
+  static const String liveWatch = '/live/:streamId/watch';
+  static const String cameraRecorder = '/camera/record';
+
+  // ── Giving ────────────────────────────────────────────────
+  static const String give = '/give';
+  static const String givingHistory = '/give/history';
+
+  // ── Marketplace ───────────────────────────────────────────
+  static const String marketplace = '/marketplace';
+  static const String createProduct = '/marketplace/create';
+  static const String productDetail = '/marketplace/:productId';
+  static const String sellerOrders = '/marketplace/orders';
+
+  // ── Memberships ───────────────────────────────────────────
+  static const String tierPicker = '/community/:communityId/memberships';
+  static const String mySubscriptions = '/memberships';
+
   // ── Settings ─────────────────────────────────────────────
   static const String settings = '/settings';
   static const String privacySettings = '/settings/privacy';

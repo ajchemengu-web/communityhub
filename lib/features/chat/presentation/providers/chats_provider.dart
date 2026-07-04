@@ -13,12 +13,16 @@ class ChatsState {
   const ChatsState({
     this.conversations = const [],
     this.isLoading = true,
+    this.hasMore = true,
+    this.isLoadingMore = false,
     this.searchQuery = '',
     this.errorMessage,
   });
 
   final List<ConversationModel> conversations;
   final bool isLoading;
+  final bool hasMore;
+  final bool isLoadingMore;
   final String searchQuery;
   final String? errorMessage;
 
@@ -38,12 +42,16 @@ class ChatsState {
   ChatsState copyWith({
     List<ConversationModel>? conversations,
     bool? isLoading,
+    bool? hasMore,
+    bool? isLoadingMore,
     String? searchQuery,
     String? errorMessage,
   }) =>
       ChatsState(
         conversations: conversations ?? this.conversations,
         isLoading: isLoading ?? this.isLoading,
+        hasMore: hasMore ?? this.hasMore,
+        isLoadingMore: isLoadingMore ?? this.isLoadingMore,
         searchQuery: searchQuery ?? this.searchQuery,
         errorMessage: errorMessage ?? this.errorMessage,
       );
@@ -58,14 +66,41 @@ class ChatsNotifier extends StateNotifier<ChatsState> {
   }
 
   final _repo = ChatRepository.instance;
+  static const _pageSize = 30;
   RealtimeChannel? _channel;
 
   Future<void> _load() async {
     try {
-      final convos = await _repo.fetchConversations();
-      state = state.copyWith(conversations: convos, isLoading: false);
+      final convos = await _repo.fetchConversations(limit: _pageSize);
+      state = state.copyWith(
+        conversations: convos,
+        hasMore: convos.length >= _pageSize,
+        isLoading: false,
+      );
     } catch (e) {
       state = state.copyWith(isLoading: false, errorMessage: e.toString());
+    }
+  }
+
+  Future<void> loadMore() async {
+    if (!state.hasMore || state.isLoadingMore || state.isLoading) return;
+    state = state.copyWith(isLoadingMore: true);
+
+    try {
+      final cursor = state.conversations.isNotEmpty
+          ? state.conversations.last.lastMessageAt
+          : null;
+      final older = await _repo.fetchConversations(
+        limit: _pageSize,
+        cursor: cursor,
+      );
+      state = state.copyWith(
+        conversations: [...state.conversations, ...older],
+        hasMore: older.length >= _pageSize,
+        isLoadingMore: false,
+      );
+    } catch (_) {
+      state = state.copyWith(isLoadingMore: false);
     }
   }
 
@@ -73,7 +108,6 @@ class ChatsNotifier extends StateNotifier<ChatsState> {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return;
 
-    // Listen for any new message inserts
     _channel = SupabaseService.client
         .channel('chats_messages_$uid')
         .onPostgresChanges(
@@ -85,7 +119,6 @@ class ChatsNotifier extends StateNotifier<ChatsState> {
             final convoId = row['conversation_id'] as String?;
             if (convoId == null) return;
 
-            // Refresh just that conversation's last_message preview
             _updateConversationPreview(
               convoId: convoId,
               lastMessage: row['content'] as String? ?? '',
@@ -106,7 +139,6 @@ class ChatsNotifier extends StateNotifier<ChatsState> {
     final list = List<ConversationModel>.from(state.conversations);
     final idx = list.indexWhere((c) => c.id == convoId);
     if (idx == -1) {
-      // Unknown conversation — full refresh
       refresh();
       return;
     }
@@ -116,21 +148,17 @@ class ChatsNotifier extends StateNotifier<ChatsState> {
 
     final updated = list[idx].copyWith(
       lastMessage: lastMessage,
-      lastMessageAt: lastMessageAt != null
-          ? DateTime.tryParse(lastMessageAt)
-          : null,
+      lastMessageAt:
+          lastMessageAt != null ? DateTime.tryParse(lastMessageAt) : null,
       lastMessageSenderId: senderId,
-      unreadCount: isFromMe
-          ? list[idx].unreadCount
-          : list[idx].unreadCount + 1,
+      unreadCount: isFromMe ? list[idx].unreadCount : list[idx].unreadCount + 1,
     );
 
     list.removeAt(idx);
-    list.insert(0, updated); // Bubble to top
+    list.insert(0, updated);
     state = state.copyWith(conversations: list);
   }
 
-  /// Called when the user opens a chat — clear unread badge
   void markConversationRead(String conversationId) {
     final list = List<ConversationModel>.from(state.conversations);
     final idx = list.indexWhere((c) => c.id == conversationId);
@@ -140,7 +168,7 @@ class ChatsNotifier extends StateNotifier<ChatsState> {
   }
 
   Future<void> refresh() async {
-    state = state.copyWith(isLoading: true);
+    state = state.copyWith(isLoading: true, hasMore: true);
     await _load();
   }
 

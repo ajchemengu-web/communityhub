@@ -62,27 +62,37 @@ class PostModel {
 
   // ── Factory ───────────────────────────────────────────────
 
+  static List<String> _parseMediaUrls(Map<String, dynamic> map) {
+    // Supports both array (media_urls) and single string (media_url) formats
+    final arr = map['media_urls'];
+    if (arr is List) return arr.cast<String>();
+    final single = (map['media_url'] ?? map['thumbnail_url']) as String?;
+    if (single != null && single.isNotEmpty) return [single];
+    return [];
+  }
+
   factory PostModel.fromMap(Map<String, dynamic> map) {
+    // Supabase returns joined user under 'users' key regardless of FK name
     final user = (map['users'] as Map<String, dynamic>?) ?? {};
 
     return PostModel(
       id: map['id'] as String? ?? '',
-      userId: map['user_id'] as String? ?? '',
+      userId: (map['author_id'] ?? map['user_id']) as String? ?? '',
       username: user['username'] as String?,
       fullName: user['full_name'] as String?,
       avatarUrl: user['avatar_url'] as String?,
       isVerified: user['is_verified'] as bool? ?? false,
-      caption: map['caption'] as String? ?? '',
+      caption: (map['content'] ?? map['caption']) as String? ?? '',
       hubType: map['hub_type'] as String? ?? 'all',
-      mediaUrls:
-          (map['media_urls'] as List<dynamic>?)?.cast<String>() ?? [],
+      // DB has media_url (singular text) — wrap in list for app compatibility
+      mediaUrls: _parseMediaUrls(map),
       mediaType: map['media_type'] as String? ?? 'text',
-      thumbnailUrl: map['thumbnail_url'] as String?,
+      thumbnailUrl: (map['media_thumbnail'] ?? map['thumbnail_url']) as String?,
       tags: (map['tags'] as List<dynamic>?)?.cast<String>() ?? [],
       youtubeUrl: map['youtube_url'] as String?,
       likesCount: map['likes_count'] as int? ?? 0,
       commentsCount: map['comments_count'] as int? ?? 0,
-      sharesCount: map['shares_count'] as int? ?? 0,
+      sharesCount: (map['saves_count'] ?? map['shares_count']) as int? ?? 0,
       isLikedByCurrentUser: map['is_liked'] as bool? ?? false,
       isBookmarkedByCurrentUser: map['is_bookmarked'] as bool? ?? false,
       createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??

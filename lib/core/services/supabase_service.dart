@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/app_constants.dart';
 
@@ -38,7 +40,7 @@ class SupabaseService {
   }
 
   // ── Google Sign-In ────────────────────────────────────────
-  Future<AuthResponse> signInWithGoogle() async {
+  Future<bool> signInWithGoogle() async {
     return await client.auth.signInWithOAuth(
       OAuthProvider.google,
       redirectTo: 'io.communityhub://login-callback',
@@ -54,7 +56,7 @@ class SupabaseService {
   Future<String> uploadFile({
     required String bucket,
     required String path,
-    required List<int> bytes,
+    required Uint8List bytes,
     String contentType = 'image/jpeg',
   }) async {
     await storage.from(bucket).uploadBinary(
@@ -79,8 +81,6 @@ class SupabaseService {
     void Function(Map<String, dynamic> payload)? onDelete,
   }) {
     final channel = client.channel(channelName);
-
-    final opts = RealtimeChannelConfig(self: true);
 
     if (filter != null) {
       channel.onPostgresChanges(

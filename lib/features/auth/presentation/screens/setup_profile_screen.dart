@@ -211,6 +211,7 @@ class _SetupProfileScreenState extends ConsumerState<SetupProfileScreen>
               _BottomActions(
                 currentStep: state.currentStep,
                 isStep1Valid: state.isStep1Valid,
+                isStep2Valid: state.isStep2Valid,
                 isLoading: state.isLoading,
                 submitStatus: state.submitStatus,
                 onNext: _goNext,
@@ -264,7 +265,9 @@ class _Header extends StatelessWidget {
 
           // Title
           Text(
-            currentStep == 0 ? 'Create your profile' : 'Tell us about yourself',
+            currentStep == 0
+                ? 'Create your profile'
+                : 'Choose your faith',
             style: AppTextStyles.headlineSmall.copyWith(
               color: AppColors.textDarkPrimary,
             ),
@@ -273,7 +276,7 @@ class _Header extends StatelessWidget {
           Text(
             currentStep == 0
                 ? 'Step 1 of 2 — Add a photo and choose your handle'
-                : 'Step 2 of 2 — Optional, but helps others find you',
+                : 'Step 2 of 2 — Select your faith to personalise your experience',
             style: AppTextStyles.bodyMedium.copyWith(
               color: AppColors.textDarkSecondary,
             ),
@@ -487,55 +490,41 @@ class _Step2 extends ConsumerWidget {
             ),
             const SizedBox(height: 20),
 
-            // ── Hub preference ───────────────────────────
-            _FieldLabel('Hub Preference'),
+            // ── Religion (required) ──────────────────────
+            _FieldLabel('Your Faith *'),
             const SizedBox(height: 4),
             Text(
-              'Personalises your feed',
+              'This personalises your feed and default scripture community',
               style: AppTextStyles.bodySmall
                   .copyWith(color: AppColors.textDarkSecondary),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                _HubChip(
-                  label: 'All',
-                  icon: Icons.all_inclusive_rounded,
-                  value: 'all',
-                  selected: state.hubPreference == 'all',
-                  onTap: () => notifier.setHubPreference('all'),
-                ),
-                const SizedBox(width: 10),
-                _HubChip(
-                  label: 'Faith',
-                  icon: Icons.church_rounded,
-                  value: 'faith',
-                  selected: state.hubPreference == 'faith',
-                  color: AppColors.faithTag,
-                  onTap: () => notifier.setHubPreference('faith'),
-                ),
-                const SizedBox(width: 10),
-                _HubChip(
-                  label: 'Career',
-                  icon: Icons.work_rounded,
-                  value: 'career',
-                  selected: state.hubPreference == 'career',
-                  color: AppColors.techTag,
-                  onTap: () => notifier.setHubPreference('career'),
-                ),
-              ],
+            const SizedBox(height: 14),
+            _ReligionPicker(
+              selected: state.religion,
+              onSelect: notifier.setReligion,
             ),
-            const SizedBox(height: 20),
+            if (state.religion.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Please select your faith to continue',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: Colors.redAccent),
+                ),
+              ),
+            const SizedBox(height: 24),
 
-            // ── Church name (shown when faith or all) ────
+            // ── Church / Mosque (adaptive) ───────────────
             AnimatedSize(
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeInOut,
-              child: state.hubPreference != 'career'
+              child: state.religion.isNotEmpty
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _FieldLabel('Church / Ministry'),
+                        _FieldLabel(state.religion == 'muslim'
+                            ? 'Masjid / Islamic Centre'
+                            : 'Church / Ministry'),
                         const SizedBox(height: 8),
                         TextFormField(
                           controller: churchCtrl,
@@ -544,8 +533,12 @@ class _Step2 extends ConsumerWidget {
                               .copyWith(color: AppColors.textDarkPrimary),
                           textCapitalization: TextCapitalization.words,
                           decoration: _inputDecoration(
-                            hint: 'Optional — e.g. Grace Chapel',
-                            prefixIcon: Icons.church_outlined,
+                            hint: state.religion == 'muslim'
+                                ? 'Optional — e.g. Masjid Al-Noor'
+                                : 'Optional — e.g. Grace Chapel',
+                            prefixIcon: state.religion == 'muslim'
+                                ? Icons.mosque_outlined
+                                : Icons.church_outlined,
                           ),
                         ),
                         const SizedBox(height: 20),
@@ -583,6 +576,7 @@ class _BottomActions extends StatelessWidget {
   const _BottomActions({
     required this.currentStep,
     required this.isStep1Valid,
+    required this.isStep2Valid,
     required this.isLoading,
     required this.submitStatus,
     required this.onNext,
@@ -592,6 +586,7 @@ class _BottomActions extends StatelessWidget {
 
   final int currentStep;
   final bool isStep1Valid;
+  final bool isStep2Valid;
   final bool isLoading;
   final SetupSubmitStatus submitStatus;
   final VoidCallback onNext;
@@ -636,7 +631,7 @@ class _BottomActions extends StatelessWidget {
                       key: const ValueKey('finish'),
                       label: isLoading ? _loadingLabel(submitStatus) : 'Finish',
                       icon: isLoading ? null : Icons.check_rounded,
-                      enabled: !isLoading,
+                      enabled: !isLoading && isStep2Valid,
                       isLoading: isLoading,
                       onTap: onSubmit,
                     ),
@@ -728,6 +723,108 @@ class _UsernameHintRow extends StatelessWidget {
       text,
       style:
           AppTextStyles.bodySmall.copyWith(color: color),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Religion Picker — two large cards: Christianity / Islam
+// ─────────────────────────────────────────────────────────────
+
+class _ReligionPicker extends StatelessWidget {
+  const _ReligionPicker({
+    required this.selected,
+    required this.onSelect,
+  });
+  final String selected;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _ReligionCard(
+          value: 'christian',
+          label: 'Christianity',
+          emoji: '✝️',
+          subtitle: 'Bible · Gospel · Church',
+          color: const Color(0xFF1A7A6B),
+          selected: selected == 'christian',
+          onTap: () => onSelect('christian'),
+        ),
+        const SizedBox(width: 12),
+        _ReligionCard(
+          value: 'muslim',
+          label: 'Islam',
+          emoji: '☪️',
+          subtitle: 'Quran · Hadith · Masjid',
+          color: const Color(0xFF1A6B4A),
+          selected: selected == 'muslim',
+          onTap: () => onSelect('muslim'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReligionCard extends StatelessWidget {
+  const _ReligionCard({
+    required this.value,
+    required this.label,
+    required this.emoji,
+    required this.subtitle,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+  final String value, label, emoji, subtitle;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+          decoration: BoxDecoration(
+            color: selected ? color.withOpacity(0.15) : AppColors.darkSurface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected ? color : AppColors.darkBorder,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 36)),
+              const SizedBox(height: 10),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? color : AppColors.textDarkPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                    color: AppColors.textDarkSecondary, fontSize: 11),
+                textAlign: TextAlign.center,
+              ),
+              if (selected) ...[
+                const SizedBox(height: 8),
+                Icon(Icons.check_circle, color: color, size: 20),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

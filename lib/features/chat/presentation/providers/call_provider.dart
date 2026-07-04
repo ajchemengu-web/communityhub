@@ -91,7 +91,7 @@ class CallNotifier extends StateNotifier<CallState> {
           schema: 'public',
           table: 'calls',
           filter: PostgresChangeFilter(
-            type: FilterType.eq,
+            type: PostgresChangeFilterType.eq,
             column: 'receiver_id',
             value: uid,
           ),

@@ -103,7 +103,7 @@ class NotificationsNotifier extends StateNotifier<NotificationsState> {
           schema: 'public',
           table: 'notifications',
           filter: PostgresChangeFilter(
-            type: FilterType.eq,
+            type: PostgresChangeFilterType.eq,
             column: 'user_id',
             value: uid,
           ),
@@ -117,7 +117,7 @@ class NotificationsNotifier extends StateNotifier<NotificationsState> {
                   .select('''
                     id, user_id, type, title, body, data, is_read,
                     created_at, actor_id,
-                    actor:profiles!actor_id(full_name, avatar_url)
+                    actor:users!actor_id(full_name, avatar_url)
                   ''')
                   .eq('id', row['id'] as String)
                   .single() as Map<String, dynamic>;

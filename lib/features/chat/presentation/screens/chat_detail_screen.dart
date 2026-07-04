@@ -42,6 +42,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   @override
   void dispose() {
     _inputCtrl.dispose();
+    _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     super.dispose();
   }
@@ -232,7 +233,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.8),
+                    color: AppColors.primary.withValues(alpha:0.8),
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -361,7 +362,7 @@ class _MessageBubble extends StatelessWidget {
                             : Container(
                                 width: 30,
                                 height: 30,
-                                color: AppColors.primary.withOpacity(0.6),
+                                color: AppColors.primary.withValues(alpha:0.6),
                                 child: Center(
                                   child: Text(
                                     (message.senderName ?? '?')[0]
@@ -628,7 +629,7 @@ class _VoiceNoteBubble extends StatelessWidget {
           height: 3,
           decoration: BoxDecoration(
             color: (message.isCurrentUser ? Colors.white : AppColors.primary)
-                .withOpacity(0.5),
+                .withValues(alpha:0.5),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -710,7 +711,7 @@ class _ReplyPreviewChip extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.darkBackground.withOpacity(0.6),
+        color: AppColors.darkBackground.withValues(alpha:0.6),
         borderRadius: BorderRadius.circular(8),
         border: const Border(
             left: BorderSide(color: AppColors.primary, width: 3)),
@@ -820,14 +821,13 @@ class _DateDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final dateDay = DateTime(date.year, date.month, date.day);
     String label;
-    if (date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day) {
+    if (dateDay == today) {
       label = 'Today';
-    } else if (date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day - 1) {
+    } else if (dateDay == yesterday) {
       label = 'Yesterday';
     } else {
       label = DateFormat('MMMM d, y').format(date);

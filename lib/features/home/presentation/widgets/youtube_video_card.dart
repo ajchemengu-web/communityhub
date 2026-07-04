@@ -1,20 +1,29 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../../core/services/youtube_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../screens/youtube_player_screen.dart';
 
 class YouTubeVideoCard extends StatelessWidget {
-  const YouTubeVideoCard({super.key, required this.video});
+  const YouTubeVideoCard({
+    super.key,
+    required this.video,
+    @Deprecated('no longer needed') this.allVideos,
+    @Deprecated('no longer needed') this.index = 0,
+  });
   final YouTubeVideo video;
+  final List<YouTubeVideo>? allVideos;
+  final int index;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => context.push('/video/${video.id}'),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => YoutubePlayerScreen.fromVideo(video: video),
+      )),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

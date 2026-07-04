@@ -4,15 +4,23 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/services/youtube_service.dart';
+import '../../../boosts/data/boosts_repository.dart';
 import '../../data/feed_repository.dart';
 import '../../domain/models/post_model.dart';
 
 // ── Feed Item (unified post + YouTube) ────────────────────────
 
 class FeedItem {
-  const FeedItem({this.post, this.youtubeVideo});
+  const FeedItem({
+    this.post,
+    this.youtubeVideo,
+    this.isBoosted = false,
+    this.isAd = false,
+  });
   final PostModel? post;
   final YouTubeVideo? youtubeVideo;
+  final bool isBoosted;
+  final bool isAd;
   bool get isYouTube => youtubeVideo != null;
 }
 
@@ -24,36 +32,48 @@ class FeedNotifier
 
   // Pagination state
   final List<PostModel> _posts = [];
-  List<YouTubeVideo> _videos = [];
-  bool _hasMore = true;
+  final List<YouTubeVideo> _videos = [];
+  final Set<String> _boostedPostIds = {};
+  bool _postsHasMore = true;
+  bool _ytHasMore = true;
   bool _isLoadingMore = false;
   DateTime? _cursor;
+  int _ytOffset = 0;
+  static const int _ytPageSize = 10;
 
-  bool get hasMore => _hasMore;
+  bool get hasMore => _postsHasMore || _ytHasMore;
   bool get isLoadingMore => _isLoadingMore;
 
   @override
   Future<List<FeedItem>> build(String hubType) async {
     // Reset on rebuild (hub switch or refresh)
     _posts.clear();
-    _videos = [];
-    _hasMore = true;
+    _videos.clear();
+    _postsHasMore = true;
+    _ytHasMore = true;
     _isLoadingMore = false;
     _cursor = null;
+    _ytOffset = 0;
 
-    // Parallel fetch: first page of posts + YouTube cache
+    // Parallel fetch: first page of posts + YouTube
     final results = await Future.wait([
-      _repo.fetchPosts(hubType: hubType, limit: AppConstants.feedPageSize),
-      _repo.fetchCachedVideos(hubType: hubType),
+      _repo.fetchPosts(hubType: hubType, limit: AppConstants.feedPageSize)
+          .catchError((_) => const FeedPage(posts: [], hasMore: false)),
+      _repo.fetchCachedVideos(hubType: hubType, limit: _ytPageSize, offset: 0),
     ]);
 
-    final page = results[0] as dynamic;
-    _videos = results[1] as List<YouTubeVideo>;
+    final page = results[0] as FeedPage;
+    final ytPage = results[1] as List<YouTubeVideo>;
 
-    _hasMore = (page as dynamic).hasMore as bool;
-    final posts = page.posts as List<PostModel>;
-    _posts.addAll(posts);
+    _postsHasMore = page.hasMore;
+    _ytHasMore = ytPage.length >= _ytPageSize;
+    _posts.addAll(page.posts);
+    _videos.addAll(ytPage);
+    _ytOffset = ytPage.length;
     if (_posts.isNotEmpty) _cursor = _posts.last.createdAt;
+
+    // Surface actively-boosted posts at the top of the first page.
+    await _applyBoosts();
 
     // Subscribe to realtime new posts
     _subscribeToRealtime(hubType);
@@ -64,26 +84,39 @@ class FeedNotifier
   // ── Load more (infinite scroll) ───────────────────────────
 
   Future<void> loadMore() async {
-    if (!_hasMore || _isLoadingMore) return;
-    final currentState = state;
-    if (currentState is AsyncLoading) return;
+    if (!hasMore || _isLoadingMore) return;
+    if (state is AsyncLoading) return;
 
     _isLoadingMore = true;
 
     try {
-      final page = await _repo.fetchPosts(
-        hubType: arg,
-        cursor: _cursor,
-        limit: AppConstants.feedPageSize,
-      );
+      await Future.wait([
+        if (_postsHasMore)
+          _repo.fetchPosts(
+            hubType: arg,
+            cursor: _cursor,
+            limit: AppConstants.feedPageSize,
+          ).then((page) {
+            _postsHasMore = page.hasMore;
+            _posts.addAll(page.posts);
+            if (page.posts.isNotEmpty) _cursor = _posts.last.createdAt;
+          }).catchError((_) {}),
 
-      _hasMore = page.hasMore;
-      _posts.addAll(page.posts);
-      if (page.posts.isNotEmpty) _cursor = _posts.last.createdAt;
+        if (_ytHasMore)
+          _repo.fetchCachedVideos(
+            hubType: arg,
+            limit: _ytPageSize,
+            offset: _ytOffset,
+          ).then((ytPage) {
+            _ytHasMore = ytPage.length >= _ytPageSize;
+            _videos.addAll(ytPage);
+            _ytOffset += ytPage.length;
+          }).catchError((_) {}),
+      ]);
 
       state = AsyncData(_buildFeedItems());
     } catch (_) {
-      // Silently fail load-more; don't clear existing data
+      // Silently fail; don't clear existing data
     } finally {
       _isLoadingMore = false;
     }
@@ -122,6 +155,28 @@ class FeedNotifier
     }
   }
 
+  // ── Optimistic bookmark toggle ────────────────────────────
+
+  Future<void> toggleBookmark(String postId) async {
+    final postIndex = _posts.indexWhere((p) => p.id == postId);
+    if (postIndex == -1) return;
+
+    final post = _posts[postIndex];
+    final wasBookmarked = post.isBookmarkedByCurrentUser;
+
+    // Optimistic update
+    _posts[postIndex] =
+        post.copyWith(isBookmarkedByCurrentUser: !wasBookmarked);
+    state = AsyncData(_buildFeedItems());
+
+    final result = await _repo.toggleBookmark(postId,
+        isCurrentlyBookmarked: wasBookmarked);
+
+    _posts[postIndex] =
+        _posts[postIndex].copyWith(isBookmarkedByCurrentUser: result);
+    state = AsyncData(_buildFeedItems());
+  }
+
   // ── Realtime subscription ─────────────────────────────────
 
   void _subscribeToRealtime(String hubType) {
@@ -140,7 +195,7 @@ class FeedNotifier
         try {
           final row = await SupabaseService.client
               .from('posts')
-              .select('*, users(username, full_name, avatar_url, is_verified)')
+              .select('*')
               .eq('id', newRow['id'] as String)
               .single();
           final newPost =
@@ -157,19 +212,67 @@ class FeedNotifier
     ref.onDispose(() => channel.unsubscribe());
   }
 
+  // ── Boosted posts (self-serve promotion) ──────────────────
+
+  /// Fetches actively-boosted post ids and moves them to the front of
+  /// `_posts` — fetching any that aren't already in the loaded page.
+  /// Only applied to the first page; re-ranking across paginated cursor
+  /// pages isn't worth the complexity for a v1.
+  Future<void> _applyBoosts() async {
+    try {
+      final boostedIds = await BoostsRepository.instance.fetchActiveBoostedPostIds();
+      if (boostedIds.isEmpty) return;
+
+      _boostedPostIds
+        ..clear()
+        ..addAll(boostedIds);
+
+      final present = _posts.map((p) => p.id).toSet();
+      final missingIds =
+          boostedIds.where((id) => !present.contains(id)).toList();
+      if (missingIds.isNotEmpty) {
+        final boostedPosts = await _repo.fetchPostsByIds(missingIds);
+        _posts.insertAll(0, boostedPosts);
+      }
+
+      _posts.sort((a, b) {
+        final aBoosted = _boostedPostIds.contains(a.id) ? 1 : 0;
+        final bBoosted = _boostedPostIds.contains(b.id) ? 1 : 0;
+        return bBoosted - aBoosted;
+      });
+    } catch (_) {
+      // Boosting is best-effort — never block the feed on it.
+    }
+  }
+
   // ── Build interleaved list ────────────────────────────────
 
-  /// Interleaves YouTube videos every 4 posts: [p,p,p,p,yt, p,p,p,p,yt, …]
+  /// Interleaves YouTube videos every 4 posts.
+  /// When there are no posts, shows all YouTube videos directly.
   List<FeedItem> _buildFeedItems() {
+    if (_posts.isEmpty) {
+      return _videos.map((v) => FeedItem(youtubeVideo: v)).toList();
+    }
+
     final result = <FeedItem>[];
     int ytIndex = 0;
 
     for (int i = 0; i < _posts.length; i++) {
-      result.add(FeedItem(post: _posts[i]));
-      // Insert a YT card after every 4th post
+      result.add(FeedItem(
+        post: _posts[i],
+        isBoosted: _boostedPostIds.contains(_posts[i].id),
+      ));
       if ((i + 1) % 4 == 0 && ytIndex < _videos.length) {
         result.add(FeedItem(youtubeVideo: _videos[ytIndex++]));
       }
+      if ((i + 1) % AppConstants.adFrequency == 0) {
+        result.add(const FeedItem(isAd: true));
+      }
+    }
+
+    // Append remaining YouTube videos after all posts
+    while (ytIndex < _videos.length) {
+      result.add(FeedItem(youtubeVideo: _videos[ytIndex++]));
     }
 
     return result;
@@ -181,10 +284,4 @@ class FeedNotifier
 final feedProvider = AsyncNotifierProvider.autoDispose
     .family<FeedNotifier, List<FeedItem>, String>(FeedNotifier.new);
 
-// Convenience alias used by _FeedTab to check loading-more state
-final feedLoadingMoreProvider =
-    Provider.autoDispose.family<bool, String>((ref, hubType) {
-  final notifier = ref.watch(feedProvider(hubType).notifier);
-  return notifier.isLoadingMore;
-});
 

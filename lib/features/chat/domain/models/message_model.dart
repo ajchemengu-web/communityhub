@@ -103,7 +103,7 @@ class MessageModel extends Equatable {
           map['reply_to'] as Map<String, dynamic>);
     }
 
-    final profile = map['profiles'] as Map<String, dynamic>?;
+    final profile = map['users'] as Map<String, dynamic>?;
 
     return MessageModel(
       id: map['id'] as String,

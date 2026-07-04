@@ -82,12 +82,30 @@ class YouTubeService {
     );
   }
 
-  // ── Career Hub Feed ───────────────────────────────────────
+  // ── Career / Technology Hub Feed ──────────────────────────
   Future<List<YouTubeVideo>> getCareerFeed({
     int maxResults = AppConstants.youtubeMaxResults,
     String? pageToken,
   }) async {
     final query = AppConstants.techKeywords.take(3).join(' OR ');
+    return searchVideos(
+      query: query,
+      maxResults: maxResults,
+      pageToken: pageToken,
+      order: 'relevance',
+    );
+  }
+
+  // ── Generic hub feed — covers all new disciplines ─────────
+  Future<List<YouTubeVideo>> getHubFeed({
+    required String hubType,
+    int maxResults = AppConstants.youtubeMaxResults,
+    String? pageToken,
+  }) async {
+    final keywords = AppConstants.keywordsFor(hubType);
+    if (keywords.isEmpty) return [];
+    // Use the first 2-3 keywords joined with OR for a broad but relevant query
+    final query = keywords.take(3).join(' OR ');
     return searchVideos(
       query: query,
       maxResults: maxResults,
@@ -109,25 +127,24 @@ class YouTubeService {
     );
   }
 
-  // ── AI Content Filter ─────────────────────────────────────
-  /// Returns true if the video title/description passes content filter.
+  // ── Content Filter ────────────────────────────────────────
+  /// Returns true if the video passes the content filter for [hubType].
   bool passesContentFilter(YouTubeVideo video, String hubType) {
     final text = '${video.title} ${video.description}'.toLowerCase();
-    final keywords = hubType == AppConstants.hubFaith
-        ? AppConstants.faithKeywords
-        : AppConstants.techKeywords;
 
-    // Block list — content that is never acceptable
     const blockList = [
       'adult', 'explicit', 'xxx', 'nude', 'nsfw',
       'gambling', 'occult', 'witchcraft', 'satanic',
     ];
-
     for (final blocked in blockList) {
       if (text.contains(blocked)) return false;
     }
 
-    // Must contain at least one relevant keyword
+    // "All" always passes (block list already applied)
+    if (hubType == AppConstants.hubAll) return true;
+
+    final keywords = AppConstants.keywordsFor(hubType);
+    if (keywords.isEmpty) return true;
     return keywords.any((kw) => text.contains(kw));
   }
 }

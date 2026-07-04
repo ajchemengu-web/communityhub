@@ -5,8 +5,11 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../boosts/domain/models/boost_model.dart';
+import '../../../boosts/presentation/widgets/promote_post_sheet.dart';
 import '../../domain/models/event_model.dart';
 import '../providers/events_provider.dart';
 
@@ -96,6 +99,23 @@ class _EventSliverAppBar extends StatelessWidget {
         onPressed: () => context.pop(),
       ),
       actions: [
+        if (event.organizerId == SupabaseService.currentUserId)
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.darkBackground.withOpacity(0.7),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.trending_up_rounded, size: 20),
+            ),
+            tooltip: 'Promote event',
+            onPressed: () => showPromoteSheet(
+              context,
+              targetType: BoostTargetType.event,
+              targetId: event.id,
+            ),
+          ),
         IconButton(
           icon: Container(
             padding: const EdgeInsets.all(6),

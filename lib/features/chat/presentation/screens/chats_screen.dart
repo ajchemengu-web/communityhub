@@ -8,6 +8,7 @@ import '../../../../core/constants/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/services/supabase_service.dart';
+import '../../../home/presentation/widgets/story_row.dart';
 import '../providers/chats_provider.dart';
 import '../../data/chat_repository.dart';
 import '../../domain/models/conversation_model.dart';
@@ -21,11 +22,26 @@ class ChatsScreen extends ConsumerStatefulWidget {
 
 class _ChatsScreenState extends ConsumerState<ChatsScreen> {
   final _searchCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
   bool _searchActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (_scrollCtrl.position.pixels >=
+        _scrollCtrl.position.maxScrollExtent - 200) {
+      ref.read(chatsProvider.notifier).loadMore();
+    }
+  }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -69,7 +85,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
         actions: [
           IconButton(
             icon: Icon(
-              _searchActive ? Icons.close : Icons.search,
+              _searchActive ? Icons.close : Icons.manage_search_rounded,
               color: AppColors.textDarkPrimary,
             ),
             onPressed: () {
@@ -90,38 +106,73 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
           ),
         ],
       ),
-      body: state.isLoading
-          ? const _LoadingShimmer()
-          : RefreshIndicator(
-              color: AppColors.primary,
-              backgroundColor: AppColors.darkSurface,
-              onRefresh: () => ref.read(chatsProvider.notifier).refresh(),
-              child: state.filtered.isEmpty
-                  ? _EmptyState(
-                      isSearch: _searchActive,
-                      onNew: () => _showNewChatSheet(context),
-                    )
-                  : ListView.separated(
-                      itemCount: state.filtered.length,
-                      separatorBuilder: (_, __) => const Divider(
-                        color: AppColors.darkDivider,
-                        height: 1,
-                        indent: 80,
-                      ),
-                      itemBuilder: (_, i) {
-                        final c = state.filtered[i];
-                        return _ConversationTile(
-                          conversation: c,
-                          onTap: () {
-                            ref
-                                .read(chatsProvider.notifier)
-                                .markConversationRead(c.id);
-                            context.push('/chat/${c.id}');
-                          },
-                        );
-                      },
-                    ),
+      body: Column(
+        children: [
+          // ── Stories (followed users only) ─────────────────
+          Container(
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppColors.darkDivider, width: 0.5),
+              ),
             ),
+            child: const StoryRow(),
+          ),
+
+          // ── Conversations ─────────────────────────────────
+          Expanded(
+            child: state.isLoading
+                ? const _LoadingShimmer()
+                : RefreshIndicator(
+                    color: AppColors.primary,
+                    backgroundColor: AppColors.darkSurface,
+                    onRefresh: () => ref.read(chatsProvider.notifier).refresh(),
+                    child: state.filtered.isEmpty
+                        ? _EmptyState(
+                            isSearch: _searchActive,
+                            onNew: () => _showNewChatSheet(context),
+                          )
+                        : ListView.separated(
+                            controller: _scrollCtrl,
+                            itemCount: state.filtered.length +
+                                (state.isLoadingMore ? 1 : 0),
+                            separatorBuilder: (_, i) {
+                              if (i >= state.filtered.length - 1) {
+                                return const SizedBox.shrink();
+                              }
+                              return const Divider(
+                                color: AppColors.darkDivider,
+                                height: 1,
+                                indent: 80,
+                              );
+                            },
+                            itemBuilder: (_, i) {
+                              if (i == state.filtered.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 20),
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      color: AppColors.primary,
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                );
+                              }
+                              final c = state.filtered[i];
+                              return _ConversationTile(
+                                conversation: c,
+                                onTap: () {
+                                  ref
+                                      .read(chatsProvider.notifier)
+                                      .markConversationRead(c.id);
+                                  context.push('/chat/${c.id}');
+                                },
+                              );
+                            },
+                          ),
+                  ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.message_outlined, color: Colors.white),
@@ -340,7 +391,7 @@ class _InitialAvatar extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: color ?? AppColors.primary.withOpacity(0.8),
+        color: color ?? AppColors.primary.withValues(alpha: 0.8),
         shape: BoxShape.circle,
       ),
       child: Center(
@@ -407,7 +458,7 @@ class _NewChatSheetState extends ConsumerState<_NewChatSheet> {
 
     try {
       final rows = await SupabaseService.client
-          .from('profiles')
+          .from('users')
           .select('id, full_name, username, avatar_url')
           .or('full_name.ilike.%$q%,username.ilike.%$q%')
           .neq('id', SupabaseService.currentUserId ?? '')
@@ -625,7 +676,7 @@ class _EmptyState extends StatelessWidget {
               width: 90,
               height: 90,
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.chat_bubble_outline,

@@ -4,7 +4,7 @@ class CommunityModel extends Equatable {
   const CommunityModel({
     required this.id,
     required this.name,
-    required this.createdBy,
+    this.createdBy = '',
     required this.membersCount,
     required this.createdAt,
     this.description = '',
@@ -24,7 +24,7 @@ class CommunityModel extends Equatable {
 
   final String id;
   final String name;
-  final String createdBy;
+  final String createdBy; // empty string if column not yet in DB
   final int membersCount;
   final DateTime createdAt;
 
@@ -54,7 +54,7 @@ class CommunityModel extends Equatable {
     return CommunityModel(
       id: map['id'] as String,
       name: map['name'] as String,
-      createdBy: map['created_by'] as String,
+      createdBy: (map['creator_id'] ?? map['created_by']) as String? ?? '',
       membersCount: (map['members_count'] as int?) ?? 0,
       createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??
           DateTime.now(),

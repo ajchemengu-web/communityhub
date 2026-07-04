@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 
 import 'core/services/supabase_service.dart';
+import 'core/services/youtube_service.dart';
+import 'core/services/notification_service.dart';
+import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
+import 'features/ads/data/ad_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +30,19 @@ Future<void> main() async {
 
   // ── Supabase ──────────────────────────────────────────────
   await SupabaseService.initialize();
+
+  // ── Stripe ────────────────────────────────────────────────
+  Stripe.publishableKey = AppConstants.stripePublishableKey;
+  await Stripe.instance.applySettings();
+
+  // ── Ads ───────────────────────────────────────────────────
+  await AdService.instance.initialize();
+
+  // ── Push Notifications (Firebase) ────────────────────────
+  await NotificationService.instance.initialize();
+
+  // ── YouTube ───────────────────────────────────────────────
+  YouTubeService.instance.setApiKey(AppConstants.youtubeApiKey);
 
   // ── Run App ───────────────────────────────────────────────
   runApp(

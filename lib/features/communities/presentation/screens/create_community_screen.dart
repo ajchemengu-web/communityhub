@@ -95,7 +95,10 @@ class _CreateCommunityScreenState
   Widget build(BuildContext context) {
     final state = ref.watch(createCommunityProvider);
     final notifier = ref.read(createCommunityProvider.notifier);
-    final isFaith = state.hubType == 'faith';
+    final isFaith = state.hubType == 'faith' ||
+        state.hubType == 'christianity' ||
+        state.hubType == 'islam';
+    final isIslam = state.hubType == 'islam';
     final isUploading = state.status == CreateCommunityStatus.uploading;
 
     return Scaffold(
@@ -159,9 +162,11 @@ class _CreateCommunityScreenState
                   _StyledField(
                     controller: _nameCtrl,
                     focusNode: _nameFocus,
-                    hint: isFaith
-                        ? 'e.g. Grace Community Church'
-                        : 'e.g. Flutter Developers Africa',
+                    hint: isIslam
+                        ? 'e.g. Masjid Al-Noor, Quran Circle…'
+                        : isFaith
+                            ? 'e.g. Grace Community Church'
+                            : 'e.g. Flutter Developers Africa',
                     maxLength: 60,
                     enabled: !isUploading,
                     validator: (v) {
@@ -171,7 +176,7 @@ class _CreateCommunityScreenState
                       return null;
                     },
                     onChanged: notifier.setName,
-                    onSaved: notifier.setName,
+                    onSaved: (v) => notifier.setName(v ?? ''),
                     textInputAction: TextInputAction.next,
                     onFieldSubmitted: (_) =>
                         FocusScope.of(context).requestFocus(_descFocus),
@@ -185,14 +190,16 @@ class _CreateCommunityScreenState
                   _StyledField(
                     controller: _descCtrl,
                     focusNode: _descFocus,
-                    hint: isFaith
-                        ? 'Share your church\'s mission and what members can expect…'
-                        : 'Tell people what this community is about…',
+                    hint: isIslam
+                        ? 'Share your masjid\'s mission and what members can expect…'
+                        : isFaith
+                            ? 'Share your church\'s mission and what members can expect…'
+                            : 'Tell people what this community is about…',
                     maxLines: 4,
                     maxLength: 300,
                     enabled: !isUploading,
                     onChanged: notifier.setDescription,
-                    onSaved: notifier.setDescription,
+                    onSaved: (v) => notifier.setDescription(v ?? ''),
                     textInputAction: TextInputAction.newline,
                   ),
 
@@ -208,15 +215,17 @@ class _CreateCommunityScreenState
 
                   // ── Faith-only fields ──────────────────────────
                   if (isFaith) ...[
-                    _SectionLabel('Denomination'),
+                    _SectionLabel(isIslam ? 'School / Madhab' : 'Denomination'),
                     const SizedBox(height: 8),
                     _StyledField(
                       controller: _denomCtrl,
                       focusNode: _denomFocus,
-                      hint: 'e.g. Baptist, Catholic, Pentecostal…',
+                      hint: isIslam
+                          ? 'e.g. Sunni, Shia, Sufi, Salafi…'
+                          : 'e.g. Baptist, Catholic, Pentecostal…',
                       enabled: !isUploading,
                       onChanged: notifier.setDenomination,
-                      onSaved: notifier.setDenomination,
+                      onSaved: (v) => notifier.setDenomination(v ?? ''),
                       textInputAction: TextInputAction.next,
                       onFieldSubmitted: (_) =>
                           FocusScope.of(context).requestFocus(_locationFocus),
@@ -233,7 +242,7 @@ class _CreateCommunityScreenState
                       prefixIcon: Icons.location_on_outlined,
                       enabled: !isUploading,
                       onChanged: notifier.setLocation,
-                      onSaved: notifier.setLocation,
+                      onSaved: (v) => notifier.setLocation(v ?? ''),
                       textInputAction: TextInputAction.next,
                       onFieldSubmitted: (_) =>
                           FocusScope.of(context).requestFocus(_websiteFocus),
@@ -253,7 +262,7 @@ class _CreateCommunityScreenState
                     enabled: !isUploading,
                     keyboardType: TextInputType.url,
                     onChanged: notifier.setWebsite,
-                    onSaved: notifier.setWebsite,
+                    onSaved: (v) => notifier.setWebsite(v ?? ''),
                     textInputAction: TextInputAction.done,
                   ),
 
@@ -433,10 +442,22 @@ class _HubTypeSelector extends StatelessWidget {
 
   static const _hubs = [
     (
-      id: 'faith',
-      label: 'Faith',
+      id: 'christianity',
+      label: 'Christianity',
       icon: Icons.church_outlined,
-      description: 'Church, ministry or faith-based group'
+      description: 'Church, ministry or Christian fellowship'
+    ),
+    (
+      id: 'islam',
+      label: 'Islam',
+      icon: Icons.mosque_outlined,
+      description: 'Masjid, Quran circle or Islamic community'
+    ),
+    (
+      id: 'faith',
+      label: 'Faith (General)',
+      icon: Icons.auto_awesome_outlined,
+      description: 'Interfaith or multi-religion spiritual group'
     ),
     (
       id: 'career',

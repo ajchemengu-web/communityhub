@@ -68,6 +68,7 @@ class NewPostNotifier extends StateNotifier<NewPostState> {
 
   void setCaption(String v) => state = state.copyWith(caption: v);
   void setHub(String hub) => state = state.copyWith(hubType: hub);
+  void setTextOnly() => state = state.copyWith(mediaFiles: [], mediaType: 'text');
   void setYoutubeUrl(String? url) => state = state.copyWith(youtubeUrl: url);
 
   void addMedia(List<File> files, String type) {

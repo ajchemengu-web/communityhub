@@ -32,11 +32,23 @@ Future<void> main() async {
   await SupabaseService.initialize();
 
   // ── Stripe ────────────────────────────────────────────────
-  Stripe.publishableKey = AppConstants.stripePublishableKey;
-  await Stripe.instance.applySettings();
+  // Payment providers are best-effort at startup — a missing/placeholder
+  // key shouldn't block the rest of the app from launching. Giving,
+  // marketplace checkout, memberships and boosts will simply fail (with
+  // a user-visible error) if a provider wasn't configured.
+  try {
+    Stripe.publishableKey = AppConstants.stripePublishableKey;
+    await Stripe.instance.applySettings();
+  } catch (e) {
+    debugPrint('Stripe init skipped: $e');
+  }
 
   // ── Ads ───────────────────────────────────────────────────
-  await AdService.instance.initialize();
+  try {
+    await AdService.instance.initialize();
+  } catch (e) {
+    debugPrint('AdMob init skipped: $e');
+  }
 
   // ── Push Notifications (Firebase) ────────────────────────
   await NotificationService.instance.initialize();

@@ -54,7 +54,7 @@ dependencies:
   # Supabase Edge Functions + webview_flutter (already a dependency)
 
   # ── Ads ───────────────────────────────────────────────────
-  google_mobile_ads: ^5.2.0
+  google_mobile_ads: ^9.0.0
 
   # ── Authentication ────────────────────────────────────────
   google_sign_in: ^6.2.1

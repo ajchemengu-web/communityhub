@@ -200,6 +200,7 @@ abstract class AppConstants {
   static const String notifLike = 'like';
   static const String notifComment = 'comment';
   static const String notifFollow = 'follow';
+  static const String notifFollowRequest = 'follow_request';
   static const String notifMention = 'mention';
   static const String notifMessage = 'message';
   static const String notifNewLogin = 'new_login';
@@ -329,6 +330,7 @@ abstract class AppConstants {
   static const String tableReels = 'reels';
   static const String tableStories = 'stories';
   static const String tableFollows = 'follows';
+  static const String tableUserBlocks = 'user_blocks';
   static const String tableLikes = 'likes';
   static const String tableComments = 'comments';
   static const String tableNotifications = 'notifications';

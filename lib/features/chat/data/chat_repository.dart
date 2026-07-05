@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../../../core/services/block_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/models/call_model.dart';
 import '../domain/models/conversation_model.dart';
@@ -41,7 +42,9 @@ class ChatRepository {
         .order('conversations(last_message_at)', ascending: false)
         .limit(limit) as List<dynamic>;
 
-    return rows.map((row) {
+    final excludedIds = await BlockService.instance.fetchExcludedUserIds();
+
+    final conversations = rows.map((row) {
       final convoMap =
           Map<String, dynamic>.from(row['conversations'] as Map);
       convoMap['last_read_at'] = row['last_read_at'];
@@ -69,6 +72,11 @@ class ChatRepository {
       return ConversationModel.fromMap(convoMap,
           participants: participants);
     }).toList();
+
+    if (excludedIds.isEmpty) return conversations;
+    return conversations
+        .where((c) => !c.participants.any((p) => excludedIds.contains(p.userId)))
+        .toList();
   }
 
   // ── Get or create a direct conversation ───────────────────
@@ -77,6 +85,10 @@ class ChatRepository {
       String otherUserId) async {
     final uid = SupabaseService.currentUserId;
     if (uid == null) throw Exception('Not authenticated');
+
+    if (await BlockService.instance.isBlockedEitherWay(otherUserId)) {
+      throw Exception('You can\'t message this user.');
+    }
 
     // Check if a direct conversation already exists between these two users
     final existing = await SupabaseService.client.rpc(

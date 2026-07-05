@@ -1,4 +1,5 @@
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/block_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/youtube_service.dart';
 import '../domain/models/post_model.dart';
@@ -28,11 +29,16 @@ class FeedRepository {
     int limit = AppConstants.feedPageSize,
   }) async {
     final uid = SupabaseService.currentUserId;
+    final excludedIds = await BlockService.instance.fetchExcludedUserIds();
 
     // 1. Build the post query — join author info; no moderation filter so all posts show
     var query = _db
         .from('posts')
         .select('*, users!posts_author_id_fkey(username, full_name, avatar_url, is_verified)');
+
+    if (excludedIds.isNotEmpty) {
+      query = query.not('author_id', 'in', excludedIds);
+    }
 
     if (hubType != AppConstants.hubAll) {
       // For parent hubs include all their sub-hubs
@@ -60,9 +66,13 @@ class FeedRepository {
 
     // If hub filter returns nothing, fall back to all posts (hub_type may be null on old posts)
     if (rows.isEmpty && hubType != AppConstants.hubAll) {
-      rows = await _db
+      var fallbackQuery = _db
           .from('posts')
-          .select('*, users!posts_author_id_fkey(username, full_name, avatar_url, is_verified)')
+          .select('*, users!posts_author_id_fkey(username, full_name, avatar_url, is_verified)');
+      if (excludedIds.isNotEmpty) {
+        fallbackQuery = fallbackQuery.not('author_id', 'in', excludedIds);
+      }
+      rows = await fallbackQuery
           .order('created_at', ascending: false)
           .limit(limit + 1) as List<dynamic>;
     }
@@ -80,11 +90,16 @@ class FeedRepository {
   Future<List<PostModel>> fetchPostsByIds(List<String> ids) async {
     if (ids.isEmpty) return [];
     final uid = SupabaseService.currentUserId;
+    final excludedIds = await BlockService.instance.fetchExcludedUserIds();
 
-    final rows = await _db
+    var query = _db
         .from('posts')
         .select('*, users!posts_author_id_fkey(username, full_name, avatar_url, is_verified)')
-        .inFilter('id', ids) as List<dynamic>;
+        .inFilter('id', ids);
+    if (excludedIds.isNotEmpty) {
+      query = query.not('author_id', 'in', excludedIds);
+    }
+    final rows = await query as List<dynamic>;
 
     return _enrichAndMapRows(rows, uid);
   }
@@ -215,12 +230,18 @@ class FeedRepository {
     if (uid == null) return [];
 
     try {
+      final excludedIds = await BlockService.instance.fetchExcludedUserIds();
+
       // Fetch stories that haven't expired, from users other than self
-      final rows = await _db
+      var query = _db
           .from('stories')
           .select('*, users(username, avatar_url, is_verified)')
           .gt('expires_at', DateTime.now().toIso8601String())
-          .neq('user_id', uid)
+          .neq('user_id', uid);
+      if (excludedIds.isNotEmpty) {
+        query = query.not('user_id', 'in', excludedIds);
+      }
+      final rows = await query
           .order('created_at', ascending: false)
           .limit(30) as List<dynamic>;
 

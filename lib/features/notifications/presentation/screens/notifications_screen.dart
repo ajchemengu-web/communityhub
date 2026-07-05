@@ -6,6 +6,7 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../profile/presentation/screens/follow_requests_screen.dart';
 import '../../domain/models/notification_model.dart';
 import '../providers/notifications_provider.dart';
 
@@ -433,6 +434,11 @@ class _NotificationTile extends ConsumerWidget {
         final actorId = notification.actorId;
         if (actorId != null) context.push('/user/$actorId');
         break;
+      case NotificationType.followRequest:
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const FollowRequestsScreen()),
+        );
+        break;
       case NotificationType.eventRsvp:
         final eventId = data['event_id'] as String?;
         if (eventId != null) context.push('/events/$eventId');
@@ -509,6 +515,7 @@ class _NotifAvatar extends StatelessWidget {
       case NotificationType.postComment:
         return Colors.blue;
       case NotificationType.follow:
+      case NotificationType.followRequest:
         return Colors.green;
       case NotificationType.prayerRequest:
         return AppColors.gold;
@@ -533,6 +540,7 @@ class _NotifAvatar extends StatelessWidget {
       case NotificationType.postComment:
         return Icons.comment_outlined;
       case NotificationType.follow:
+      case NotificationType.followRequest:
         return Icons.person_add_outlined;
       case NotificationType.prayerRequest:
         return Icons.volunteer_activism;

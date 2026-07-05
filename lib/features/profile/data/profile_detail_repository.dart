@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/services/block_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../home/domain/models/post_model.dart';
 import '../../notifications/data/notifications_repository.dart';
@@ -20,7 +21,7 @@ class ProfileDetailRepository {
     var row = await _db
         .from('users')
         .select(
-            'id, username, full_name, avatar_url, bio, church_name, website, is_verified, created_at')
+            'id, username, full_name, avatar_url, bio, church_name, website, is_verified, is_private, created_at')
         .eq('id', userId)
         .maybeSingle();
 
@@ -39,7 +40,7 @@ class ProfileDetailRepository {
       row = await _db
           .from('users')
           .select(
-              'id, username, full_name, avatar_url, bio, church_name, website, is_verified, created_at')
+              'id, username, full_name, avatar_url, bio, church_name, website, is_verified, is_private, created_at')
           .eq('id', userId)
           .maybeSingle();
       row ??= {
@@ -51,11 +52,16 @@ class ProfileDetailRepository {
         'church_name': null,
         'website': null,
         'is_verified': false,
+        'is_private': false,
         'created_at': DateTime.now().toIso8601String(),
       };
     }
 
-    // Followers / following counts
+    final isPrivate = (row['is_private'] as bool?) ?? false;
+
+    // Followers / following counts — only accepted follows count, so a
+    // pile-up of pending requests to a private account doesn't inflate
+    // the follower count before they're approved.
     int followerVal = 0;
     int followingVal = 0;
     try {
@@ -63,6 +69,7 @@ class ProfileDetailRepository {
           .from('follows')
           .select()
           .eq('following_id', userId)
+          .eq('status', 'accepted')
           .count(CountOption.exact);
       followerVal = followerRes.count;
 
@@ -70,22 +77,29 @@ class ProfileDetailRepository {
           .from('follows')
           .select()
           .eq('follower_id', userId)
+          .eq('status', 'accepted')
           .count(CountOption.exact);
       followingVal = followingRes.count;
     } catch (_) {}
 
-    // Is the current user following this profile?
+    // Is the current user following this profile — and is it accepted
+    // or still a pending request (relevant for private accounts)?
     bool isFollowing = false;
+    bool isRequested = false;
     final currentUid = SupabaseService.currentUserId;
     if (currentUid != null && currentUid != userId) {
       try {
         final follow = await _db
             .from('follows')
-            .select()
+            .select('status')
             .eq('follower_id', currentUid)
             .eq('following_id', userId)
             .maybeSingle();
-        isFollowing = follow != null;
+        if (follow != null) {
+          final status = follow['status'] as String? ?? 'accepted';
+          isFollowing = status == 'accepted';
+          isRequested = status == 'pending';
+        }
       } catch (_) {}
     }
 
@@ -109,12 +123,22 @@ class ProfileDetailRepository {
       } catch (_) {}
     }
 
+    final isBlocked = currentUid != null && currentUid != userId
+        ? await BlockService.instance.isBlockedEitherWay(userId)
+        : false;
+
+    final isOwnProfile = currentUid == userId;
+    final canViewPosts = isOwnProfile || !isPrivate || isFollowing;
+
     return {
       ...Map<String, dynamic>.from(row),
       'follower_count': followerVal,
       'following_count': followingVal,
       'post_count': postCountVal,
       'is_following': isFollowing,
+      'is_requested': isRequested,
+      'is_blocked': isBlocked,
+      'can_view_posts': canViewPosts,
     };
   }
 
@@ -123,6 +147,8 @@ class ProfileDetailRepository {
   Future<List<PostModel>> fetchUserPosts(String userId,
       {int page = 0, int pageSize = 18}) async {
     final range = [page * pageSize, (page + 1) * pageSize - 1];
+
+    if (await BlockService.instance.isBlockedEitherWay(userId)) return [];
 
     // 1. Try with FK join for full author data
     try {
@@ -202,30 +228,46 @@ class ProfileDetailRepository {
 
   // ── Follow / Unfollow ─────────────────────────────────────
 
-  Future<bool> toggleFollow(String targetUserId,
-      {required bool isCurrentlyFollowing}) async {
+  /// Toggles the follow relationship. Following a private account inserts
+  /// a `pending` row instead of `accepted` — the target has to approve it
+  /// from the Follow Requests screen before their content becomes
+  /// visible. Unfollowing (or cancelling a pending request) is the same
+  /// action either way: delete the row.
+  Future<Map<String, bool>> toggleFollow(
+    String targetUserId, {
+    required bool isCurrentlyFollowing,
+    required bool isCurrentlyRequested,
+    required bool isTargetPrivate,
+  }) async {
     final uid = SupabaseService.currentUserId;
-    if (uid == null || uid == targetUserId) return isCurrentlyFollowing;
+    if (uid == null || uid == targetUserId) {
+      return {'is_following': isCurrentlyFollowing, 'is_requested': isCurrentlyRequested};
+    }
 
     try {
-      if (isCurrentlyFollowing) {
+      if (isCurrentlyFollowing || isCurrentlyRequested) {
         await _db
             .from('follows')
             .delete()
             .eq('follower_id', uid)
             .eq('following_id', targetUserId);
-        return false;
+        return {'is_following': false, 'is_requested': false};
       } else {
+        final status = isTargetPrivate ? 'pending' : 'accepted';
         await _db.from('follows').upsert({
           'follower_id': uid,
           'following_id': targetUserId,
+          'status': status,
         });
-        // Send follow notification (fire-and-forget)
-        _sendFollowNotification(uid, targetUserId);
-        return true;
+        if (status == 'pending') {
+          _sendFollowRequestNotification(uid, targetUserId);
+        } else {
+          _sendFollowNotification(uid, targetUserId);
+        }
+        return {'is_following': status == 'accepted', 'is_requested': status == 'pending'};
       }
     } catch (_) {
-      return isCurrentlyFollowing;
+      return {'is_following': isCurrentlyFollowing, 'is_requested': isCurrentlyRequested};
     }
   }
 
@@ -247,6 +289,68 @@ class ProfileDetailRepository {
         actorId: actorId,
       );
     } catch (_) {}
+  }
+
+  Future<void> _sendFollowRequestNotification(String actorId, String targetId) async {
+    try {
+      final actor = await _db
+          .from('users')
+          .select('full_name, username')
+          .eq('id', actorId)
+          .maybeSingle();
+      final name = actor?['full_name'] as String? ??
+          actor?['username'] as String? ??
+          'Someone';
+      await NotificationsRepository.instance.createNotification(
+        userId: targetId,
+        type: NotificationType.followRequest,
+        title: 'Follow request',
+        body: '$name wants to follow you',
+        actorId: actorId,
+      );
+    } catch (_) {}
+  }
+
+  // ── Follow requests (private accounts) ────────────────────
+
+  Future<List<Map<String, dynamic>>> fetchFollowRequests() async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return [];
+    final rows = await _db
+        .from('follows')
+        .select('follower_id, created_at, follower:users!follower_id(id, username, full_name, avatar_url)')
+        .eq('following_id', uid)
+        .eq('status', 'pending')
+        .order('created_at', ascending: false) as List;
+    return rows.map((r) => Map<String, dynamic>.from(r as Map)).toList();
+  }
+
+  Future<void> acceptFollowRequest(String followerId) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return;
+    await _db
+        .from('follows')
+        .update({'status': 'accepted'})
+        .eq('follower_id', followerId)
+        .eq('following_id', uid);
+  }
+
+  Future<void> rejectFollowRequest(String followerId) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return;
+    await _db
+        .from('follows')
+        .delete()
+        .eq('follower_id', followerId)
+        .eq('following_id', uid);
+  }
+
+  // ── Account privacy ────────────────────────────────────────
+
+  Future<void> setPrivateAccount(bool isPrivate) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return;
+    await _db.from('users').update({'is_private': isPrivate}).eq('id', uid);
   }
 
   // ── Edit own profile ──────────────────────────────────────

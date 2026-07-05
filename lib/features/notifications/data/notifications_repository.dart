@@ -120,6 +120,8 @@ class NotificationsRepository {
         return 'post_comment';
       case NotificationType.follow:
         return 'follow';
+      case NotificationType.followRequest:
+        return 'follow_request';
       case NotificationType.commentLike:
         return 'comment_like';
       case NotificationType.eventRsvp:

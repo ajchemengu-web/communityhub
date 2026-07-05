@@ -250,6 +250,34 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Changes the current user's password. Supabase requires the user to
+  /// already be signed in — no re-auth/current-password check is enforced
+  /// here, matching Supabase Auth's own updateUser semantics.
+  Future<void> changePassword(String newPassword) async {
+    try {
+      await SupabaseService.client.auth.updateUser(
+        supa.UserAttributes(password: newPassword),
+      );
+    } catch (e) {
+      state = state.copyWith(errorMessage: e.toString());
+      rethrow;
+    }
+  }
+
+  /// Starts an email change. Supabase sends a confirmation link to the
+  /// new address (and, depending on project settings, to the old one
+  /// too) — the email isn't updated until the user confirms it.
+  Future<void> updateEmail(String newEmail) async {
+    try {
+      await SupabaseService.client.auth.updateUser(
+        supa.UserAttributes(email: newEmail.trim()),
+      );
+    } catch (e) {
+      state = state.copyWith(errorMessage: e.toString());
+      rethrow;
+    }
+  }
+
   Future<void> signOut() async {
     state = state.copyWith(status: AuthStatus.loading);
     try {

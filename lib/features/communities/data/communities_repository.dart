@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/services/block_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/models/announcement_model.dart';
 import '../domain/models/brand_partnership_model.dart';
@@ -569,12 +570,17 @@ class CommunitiesRepository {
     int limit = 15,
     DateTime? cursor,
   }) async {
+    final excludedIds = await BlockService.instance.fetchExcludedUserIds();
+
     var q = _db
         .from('posts')
         .select('*, users(username, full_name, avatar_url, is_verified)')
         .eq('community_id', communityId)
         .eq('moderation_status', 'approved');
 
+    if (excludedIds.isNotEmpty) {
+      q = q.not('author_id', 'in', excludedIds);
+    }
     if (cursor != null) {
       q = q.lt('created_at', cursor.toIso8601String());
     }

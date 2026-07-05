@@ -1,4 +1,5 @@
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/block_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/youtube_service.dart';
 import '../../home/domain/models/post_model.dart';
@@ -54,22 +55,27 @@ class SearchRepository {
   Future<List<PostModel>> fetchTrending({int limit = 20}) async {
     // Try with moderation filter first; fall back to all posts
     try {
+      final excludedIds = await BlockService.instance.fetchExcludedUserIds();
       final since = DateTime.now()
           .subtract(const Duration(days: 7))
           .toIso8601String();
-      var rows = await _db
+      var q = _db
           .from('posts')
           .select('*')
           .eq('moderation_status', 'approved')
-          .gte('created_at', since)
+          .gte('created_at', since);
+      if (excludedIds.isNotEmpty) q = q.not('author_id', 'in', excludedIds);
+      var rows = await q
           .order('likes_count', ascending: false)
           .limit(limit) as List<dynamic>;
 
       if (rows.isEmpty) {
         // Fall back: all posts, any status
-        rows = await _db
-            .from('posts')
-            .select('*')
+        var fallbackQ = _db.from('posts').select('*');
+        if (excludedIds.isNotEmpty) {
+          fallbackQ = fallbackQ.not('author_id', 'in', excludedIds);
+        }
+        rows = await fallbackQ
             .order('likes_count', ascending: false)
             .limit(limit) as List<dynamic>;
       }
@@ -88,6 +94,8 @@ class SearchRepository {
     if (query.trim().isEmpty) return [];
 
     try {
+      final excludedIds = await BlockService.instance.fetchExcludedUserIds();
+
       // Search caption OR hub_type — no moderation filter so new DBs work
       var q = _db
           .from('posts')
@@ -97,6 +105,7 @@ class SearchRepository {
       if (hubType != null && hubType != 'all') {
         q = q.eq('hub_type', hubType);
       }
+      if (excludedIds.isNotEmpty) q = q.not('author_id', 'in', excludedIds);
 
       final rows = await q
           .order('created_at', ascending: false)
@@ -104,10 +113,11 @@ class SearchRepository {
 
       // If nothing, retry with just caption and no status filter
       if (rows.isEmpty) {
-        final fallback = await _db
-            .from('posts')
-            .select('*')
-            .ilike('caption', '%$query%')
+        var fallbackQ = _db.from('posts').select('*').ilike('caption', '%$query%');
+        if (excludedIds.isNotEmpty) {
+          fallbackQ = fallbackQ.not('author_id', 'in', excludedIds);
+        }
+        final fallback = await fallbackQ
             .order('created_at', ascending: false)
             .limit(30) as List<dynamic>;
         return fallback
@@ -143,11 +153,15 @@ class SearchRepository {
     final uid = SupabaseService.currentUserId;
 
     try {
-      final rows = await _db
+      final excludedIds = await BlockService.instance.fetchExcludedUserIds();
+      var userQuery = _db
           .from('users')
           .select('id, username, full_name, avatar_url, is_verified')
-          .or('username.ilike.%$query%,full_name.ilike.%$query%')
-          .limit(20) as List<dynamic>;
+          .or('username.ilike.%$query%,full_name.ilike.%$query%');
+      if (excludedIds.isNotEmpty) {
+        userQuery = userQuery.not('id', 'in', excludedIds);
+      }
+      final rows = await userQuery.limit(20) as List<dynamic>;
 
       Set<String> followingIds = {};
       if (uid != null && rows.isNotEmpty) {
@@ -157,6 +171,7 @@ class SearchRepository {
               .from('follows')
               .select('following_id')
               .eq('follower_id', uid)
+              .eq('status', 'accepted')
               .inFilter('following_id', ids) as List<dynamic>;
           followingIds =
               follows.map((r) => r['following_id'] as String).toSet();
@@ -180,6 +195,12 @@ class SearchRepository {
 
   // ── Follow toggle ──────────────────────────────────────────
 
+  /// Note: returns `true` only when the follow is immediately accepted.
+  /// Following a private account from a search result still creates a
+  /// pending request (consistent with the profile screen), but this
+  /// simpler bool-returning API just reports it as "not following yet" —
+  /// see `ProfileDetailRepository.toggleFollow` for the full tri-state
+  /// version used on the profile screen where "Requested" is shown.
   Future<bool> toggleFollow(String targetId,
       {required bool isCurrentlyFollowing}) async {
     final uid = SupabaseService.currentUserId;
@@ -193,12 +214,21 @@ class SearchRepository {
             .eq('following_id', targetId);
         return false;
       } else {
+        final target = await _db
+            .from('users')
+            .select('is_private')
+            .eq('id', targetId)
+            .maybeSingle();
+        final isPrivate = (target?['is_private'] as bool?) ?? false;
+        final status = isPrivate ? 'pending' : 'accepted';
+
         await _db.from('follows').upsert({
           'follower_id': uid,
           'following_id': targetId,
+          'status': status,
         });
         _sendFollowNotification(uid, targetId);
-        return true;
+        return status == 'accepted';
       }
     } catch (_) {
       return isCurrentlyFollowing;
@@ -231,13 +261,18 @@ class SearchRepository {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return [];
     try {
+      final excludedIds = await BlockService.instance.fetchExcludedUserIds();
+
       // People the current user doesn't follow yet, ordered by follower count
       // We approximate by joining follows and ordering by count
-      final rows = await _db
+      var suggestQuery = _db
           .from('users')
           .select('id, username, full_name, avatar_url, is_verified')
-          .neq('id', uid)
-          .limit(limit * 3) as List<dynamic>; // over-fetch, then filter
+          .neq('id', uid);
+      if (excludedIds.isNotEmpty) {
+        suggestQuery = suggestQuery.not('id', 'in', excludedIds);
+      }
+      final rows = await suggestQuery.limit(limit * 3) as List<dynamic>; // over-fetch, then filter
 
       if (rows.isEmpty) return [];
 

@@ -6,6 +6,7 @@ enum NotificationType {
   postLike,
   postComment,
   follow,
+  followRequest,
   commentLike,
   eventRsvp,
   communityJoin,
@@ -96,6 +97,8 @@ class NotificationModel {
         return NotificationType.postComment;
       case 'follow':
         return NotificationType.follow;
+      case 'follow_request':
+        return NotificationType.followRequest;
       case 'comment_like':
         return NotificationType.commentLike;
       case 'event_rsvp':

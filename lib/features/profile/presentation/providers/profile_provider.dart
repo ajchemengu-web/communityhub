@@ -27,6 +27,14 @@ class ProfileState {
 
   bool get isFollowing =>
       (profileData?['is_following'] as bool?) ?? false;
+  bool get isRequested =>
+      (profileData?['is_requested'] as bool?) ?? false;
+  bool get isBlocked =>
+      (profileData?['is_blocked'] as bool?) ?? false;
+  bool get isPrivate =>
+      (profileData?['is_private'] as bool?) ?? false;
+  bool get canViewPosts =>
+      (profileData?['can_view_posts'] as bool?) ?? true;
   bool get isOwnProfile =>
       profileData?['id'] == SupabaseService.currentUserId;
   int get followerCount =>
@@ -68,13 +76,12 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
 
   Future<void> _load() async {
     try {
-      final results = await Future.wait([
-        _repo.fetchProfile(userId),
-        _repo.fetchUserPosts(userId, page: 0, pageSize: _pageSize),
-      ]);
+      final profile = await _repo.fetchProfile(userId);
+      final canViewPosts = (profile['can_view_posts'] as bool?) ?? true;
 
-      final profile = results[0] as Map<String, dynamic>;
-      final posts = results[1] as List<PostModel>;
+      final posts = canViewPosts
+          ? await _repo.fetchUserPosts(userId, page: 0, pageSize: _pageSize)
+          : <PostModel>[];
 
       state = state.copyWith(
         profileData: profile,
@@ -119,23 +126,40 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     state = state.copyWith(isTogglingFollow: true);
 
     final wasFollowing = state.isFollowing;
+    final wasRequested = state.isRequested;
+    final wasActive = wasFollowing || wasRequested;
     final currentCount = state.followerCount;
 
-    // Optimistic
+    // Optimistic — only an *accepted* follow bumps the visible count;
+    // a pending request to a private account doesn't yet.
     final updated = Map<String, dynamic>.from(state.profileData ?? {});
-    updated['is_following'] = !wasFollowing;
-    updated['follower_count'] =
-        wasFollowing ? currentCount - 1 : currentCount + 1;
+    if (wasActive) {
+      updated['is_following'] = false;
+      updated['is_requested'] = false;
+      if (wasFollowing) updated['follower_count'] = currentCount - 1;
+    } else if (state.isPrivate) {
+      updated['is_requested'] = true;
+    } else {
+      updated['is_following'] = true;
+      updated['follower_count'] = currentCount + 1;
+    }
     state = state.copyWith(profileData: updated, isTogglingFollow: false);
 
-    final result = await _repo.toggleFollow(userId,
-        isCurrentlyFollowing: wasFollowing);
+    final result = await _repo.toggleFollow(
+      userId,
+      isCurrentlyFollowing: wasFollowing,
+      isCurrentlyRequested: wasRequested,
+      isTargetPrivate: state.isPrivate,
+    );
 
-    // Confirm with server result
+    // Confirm with server result — count only ever reflects *accepted*
+    // follows, so the delta is purely "did is_following change".
+    final nowFollowing = result['is_following'] ?? false;
     final confirmed = Map<String, dynamic>.from(state.profileData ?? {});
-    confirmed['is_following'] = result;
+    confirmed['is_following'] = nowFollowing;
+    confirmed['is_requested'] = result['is_requested'];
     confirmed['follower_count'] =
-        result ? currentCount + 1 : currentCount - 1;
+        currentCount + (nowFollowing ? 1 : 0) - (wasFollowing ? 1 : 0);
     state = state.copyWith(profileData: confirmed);
   }
 }

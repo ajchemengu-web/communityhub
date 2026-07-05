@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../auth/presentation/providers/auth_provider.dart';
+import 'account_privacy_screen.dart';
+import 'blocked_accounts_screen.dart';
+import 'help_center_screen.dart';
 import 'privacy_policy_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -34,7 +38,7 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.lock_outline_rounded,
             title: 'Change Password',
-            onTap: () => _showComingSoon(context),
+            onTap: () => _showChangePasswordSheet(context, ref),
           ),
           _SettingsTile(
             icon: Icons.phone_outlined,
@@ -44,7 +48,7 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.email_outlined,
             title: 'Email Address',
-            onTap: () => _showComingSoon(context),
+            onTap: () => _showChangeEmailSheet(context, ref),
           ),
 
           const SizedBox(height: 8),
@@ -89,12 +93,16 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.visibility_outlined,
             title: 'Account Privacy',
-            onTap: () => _showComingSoon(context),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AccountPrivacyScreen()),
+            ),
           ),
           _SettingsTile(
             icon: Icons.block_rounded,
             title: 'Blocked Accounts',
-            onTap: () => _showComingSoon(context),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BlockedAccountsScreen()),
+            ),
           ),
 
           const SizedBox(height: 8),
@@ -114,7 +122,9 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.help_outline_rounded,
             title: 'Help Center',
-            onTap: () => _showComingSoon(context),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const HelpCenterScreen()),
+            ),
           ),
           _SettingsTile(
             icon: Icons.privacy_tip_outlined,
@@ -145,6 +155,202 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: 32),
         ],
+      ),
+    );
+  }
+
+  void _showChangePasswordSheet(BuildContext context, WidgetRef ref) {
+    final newPasswordCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    bool isSubmitting = false;
+    String? errorText;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.darkSurface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Change password',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: newPasswordCtrl,
+                obscureText: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'New password'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmCtrl,
+                obscureText: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'Confirm new password'),
+              ),
+              if (errorText != null) ...[
+                const SizedBox(height: 8),
+                Text(errorText!, style: const TextStyle(color: AppColors.error)),
+              ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          final pw = newPasswordCtrl.text;
+                          if (pw.length < 6) {
+                            setSheetState(() =>
+                                errorText = 'Password must be at least 6 characters');
+                            return;
+                          }
+                          if (pw != confirmCtrl.text) {
+                            setSheetState(() => errorText = 'Passwords do not match');
+                            return;
+                          }
+                          setSheetState(() {
+                            isSubmitting = true;
+                            errorText = null;
+                          });
+                          try {
+                            await ref
+                                .read(authNotifierProvider.notifier)
+                                .changePassword(pw);
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Password updated')),
+                              );
+                            }
+                          } catch (e) {
+                            setSheetState(() {
+                              isSubmitting = false;
+                              errorText = 'Could not update password: $e';
+                            });
+                          }
+                        },
+                  child: isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Update password'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showChangeEmailSheet(BuildContext context, WidgetRef ref) {
+    final currentEmail = SupabaseService.currentUser?.email ?? '';
+    final newEmailCtrl = TextEditingController();
+    bool isSubmitting = false;
+    String? errorText;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.darkSurface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Change email address',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text('Current: $currentEmail',
+                  style: const TextStyle(color: Colors.white54, fontSize: 13)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: newEmailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'New email address'),
+              ),
+              if (errorText != null) ...[
+                const SizedBox(height: 8),
+                Text(errorText!, style: const TextStyle(color: AppColors.error)),
+              ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          final email = newEmailCtrl.text.trim();
+                          if (!email.contains('@') || !email.contains('.')) {
+                            setSheetState(() => errorText = 'Enter a valid email address');
+                            return;
+                          }
+                          setSheetState(() {
+                            isSubmitting = true;
+                            errorText = null;
+                          });
+                          try {
+                            await ref
+                                .read(authNotifierProvider.notifier)
+                                .updateEmail(email);
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                      'Confirmation link sent to $email — check your inbox to finish the change'),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            setSheetState(() {
+                              isSubmitting = false;
+                              errorText = 'Could not update email: $e';
+                            });
+                          }
+                        },
+                  child: isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Send confirmation'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

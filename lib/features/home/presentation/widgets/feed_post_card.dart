@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import '../../../../core/services/block_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
@@ -465,7 +466,35 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
                   style: AppTextStyles.bodyLarge.copyWith(
                     color: AppColors.error,
                   )),
-              onTap: () => Navigator.pop(context),
+              onTap: () async {
+                Navigator.pop(context);
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    backgroundColor: AppColors.darkSurface,
+                    title: Text('Block ${widget.post.usernameDisplay}?',
+                        style: const TextStyle(color: Colors.white)),
+                    content: const Text(
+                      'They won\'t be able to see your posts or message you, and you won\'t see theirs.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        child: const Text('Block',
+                            style: TextStyle(color: AppColors.error)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await BlockService.instance.blockUser(widget.post.userId);
+                }
+              },
             ),
             const SizedBox(height: 8),
           ],

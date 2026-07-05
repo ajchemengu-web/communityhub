@@ -51,6 +51,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
 
     final state = ref.watch(profileProvider(_uid));
+
+    if (!state.isLoading && state.isBlocked && !state.isOwnProfile) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(backgroundColor: Colors.black, elevation: 0),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'This account is unavailable',
+              style: TextStyle(color: Colors.white54, fontSize: 15),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     final profile = state.profileData ?? {};
     final username = profile['username'] as String? ?? '';
     final fullName = profile['full_name'] as String? ?? 'User';
@@ -92,6 +110,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     followingCount: state.followingCount,
                     isOwnProfile: state.isOwnProfile,
                     isFollowing: state.isFollowing,
+                    isRequested: state.isRequested,
                     isTogglingFollow: state.isTogglingFollow,
                     onEdit: () => context.push(AppRoutes.editProfile),
                     onShare: () =>
@@ -303,6 +322,7 @@ class _ProfileHeader extends StatelessWidget {
     required this.followingCount,
     required this.isOwnProfile,
     required this.isFollowing,
+    required this.isRequested,
     required this.isTogglingFollow,
     required this.onEdit,
     required this.onShare,
@@ -321,6 +341,7 @@ class _ProfileHeader extends StatelessWidget {
   final int followingCount;
   final bool isOwnProfile;
   final bool isFollowing;
+  final bool isRequested;
   final bool isTogglingFollow;
   final VoidCallback onEdit;
   final VoidCallback onShare;
@@ -507,9 +528,13 @@ class _ProfileHeader extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _ActionBtn(
-                        label: isFollowing ? 'Following' : 'Follow',
+                        label: isFollowing
+                            ? 'Following'
+                            : isRequested
+                                ? 'Requested'
+                                : 'Follow',
                         onTap: isTogglingFollow ? () {} : onFollow,
-                        filled: !isFollowing,
+                        filled: !isFollowing && !isRequested,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -943,6 +968,29 @@ class _PostsGrid extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!state.canViewPosts) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.lock_outline_rounded, size: 52, color: Colors.white24),
+              SizedBox(height: 14),
+              Text('This account is private',
+                  style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500)),
+              SizedBox(height: 6),
+              Text('Follow this account to see their posts.',
+                  style: TextStyle(color: Colors.white38, fontSize: 13)),
+            ],
+          ),
+        ),
+      );
+    }
+
     final posts = filterVideo
         ? state.posts.where((p) => p.mediaType == 'video').toList()
         : state.posts;

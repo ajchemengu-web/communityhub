@@ -660,7 +660,7 @@ class _DotIndicator extends StatelessWidget {
           decoration: BoxDecoration(
             color: active
                 ? AppColors.secondary
-                : Colors.white.withOpacity(0.5),
+                : Colors.white.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(3),
           ),
         );
@@ -734,7 +734,7 @@ class _HubTag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(

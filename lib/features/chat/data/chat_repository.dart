@@ -106,7 +106,7 @@ class ChatRepository {
         .from('conversations')
         .insert({'type': 'direct', 'created_by': uid})
         .select()
-        .single() as Map<String, dynamic>;
+        .single();
 
     final convoId = convo['id'] as String;
 
@@ -134,7 +134,7 @@ class ChatRepository {
           )
         ''')
         .eq('id', convoId)
-        .single() as Map<String, dynamic>;
+        .single();
 
     final memberRows = (row['conversation_members'] as List? ?? []);
     final participants = memberRows
@@ -223,7 +223,7 @@ class ChatRepository {
         })
         .select(
             'id, conversation_id, sender_id, content, type, media_url, media_thumbnail_url, reply_to_id, is_deleted, reactions, call_type, call_duration, call_status, created_at, users!sender_id(full_name, username, avatar_url)')
-        .single() as Map<String, dynamic>;
+        .single();
 
     // Update conversation last_message
     await SupabaseService.client.from('conversations').update({
@@ -333,7 +333,7 @@ class ChatRepository {
         })
         .select(
             'id, conversation_id, caller_id, receiver_id, type, status, channel_name, created_at, started_at, ended_at')
-        .single() as Map<String, dynamic>;
+        .single();
 
     return CallModel.fromMap(row);
   }
@@ -356,7 +356,7 @@ class ChatRepository {
         .update(updates)
         .eq('id', callId)
         .select()
-        .single() as Map<String, dynamic>;
+        .single();
 
     return CallModel.fromMap(row);
   }

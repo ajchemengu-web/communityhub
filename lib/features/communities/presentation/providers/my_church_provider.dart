@@ -175,7 +175,7 @@ class MyChurchNotifier extends StateNotifier<MyChurchState> {
             'is_anonymous': isAnonymous,
           })
           .select('*, profiles!author_id(full_name, avatar_url)')
-          .single() as Map<String, dynamic>;
+          .single();
 
       final profile = row['profiles'] as Map<String, dynamic>?;
       final map = Map<String, dynamic>.from(row);

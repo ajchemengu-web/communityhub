@@ -287,12 +287,12 @@ class _GalleryPickerStepState extends State<_GalleryPickerStep>
                 ),
               ),
               // Drafts / Templates chips
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(14, 8, 14, 4),
                 child: Row(
                   children: [
                     _Chip(label: 'Drafts · 1', icon: Icons.layers_outlined),
-                    const SizedBox(width: 10),
+                    SizedBox(width: 10),
                     _Chip(label: 'Templates', icon: Icons.auto_awesome_mosaic_outlined),
                   ],
                 ),
@@ -918,9 +918,6 @@ class _EditStepState extends State<_EditStep> {
 
   @override
   Widget build(BuildContext context) {
-    final screenW = MediaQuery.of(context).size.width;
-    final mediaH = screenW * 16 / 9; // 9:16 portrait preview
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -946,9 +943,9 @@ class _EditStepState extends State<_EditStep> {
                       color: const Color(0xFF2A2A2A),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
+                      children: [
                         Icon(Icons.music_note,
                             color: Colors.white70, size: 15),
                         SizedBox(width: 6),
@@ -1232,8 +1229,7 @@ class _AudioTrack {
     required this.artworkUrl,
     required this.previewUrl,
     required this.durationMs,
-    this.saved = false,
-  });
+  }) : saved = false;
 
   String get durationLabel {
     final s = (durationMs / 1000).round();
@@ -1271,7 +1267,7 @@ class _AudioPickerSheetState extends State<_AudioPickerSheet>
 
   List<_AudioTrack> _forYou = [];
   List<_AudioTrack> _trending = [];
-  List<_AudioTrack> _saved = [];
+  final List<_AudioTrack> _saved = [];
   List<_AudioTrack> _searchResults = [];
   bool _searching = false;
   bool _loadingForYou = true;

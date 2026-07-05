@@ -43,7 +43,6 @@ class _CameraRecorderScreenState extends State<CameraRecorderScreen>
   double _zoomLevel = 1.0;
 
   // Gallery thumbnail
-  AssetEntity? _lastAsset;
   Uint8List? _lastThumb;
 
   // Preview after recording
@@ -111,7 +110,7 @@ class _CameraRecorderScreenState extends State<CameraRecorderScreen>
     if (assets.isEmpty) return;
     final thumb = await assets.first
         .thumbnailDataWithSize(const ThumbnailSize(120, 120));
-    if (mounted) setState(() { _lastAsset = assets.first; _lastThumb = thumb; });
+    if (mounted) setState(() => _lastThumb = thumb);
   }
 
   Future<void> _toggleRecording() async {
@@ -292,9 +291,9 @@ class _CameraRecorderScreenState extends State<CameraRecorderScreen>
                   Container(
                     width: 36,
                     height: 36,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: const LinearGradient(
+                      gradient: LinearGradient(
                         colors: [Color(0xFF9C27B0), Color(0xFF3F51B5)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,

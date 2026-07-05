@@ -45,8 +45,8 @@ class _BibleScreenState extends State<BibleScreen>
         backgroundColor: const Color(0xFF0D1117),
         elevation: 0,
         leading: const BackButton(color: Colors.white),
-        title: Row(
-          children: const [
+        title: const Row(
+          children: [
             Icon(Icons.menu_book_rounded, color: Color(0xFFD4A847), size: 22),
             SizedBox(width: 8),
             Text('The Holy Bible',

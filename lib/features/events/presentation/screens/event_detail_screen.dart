@@ -22,9 +22,9 @@ class EventDetailScreen extends ConsumerWidget {
     final state = ref.watch(eventDetailProvider(eventId));
 
     if (state.isLoading) {
-      return Scaffold(
+      return const Scaffold(
         backgroundColor: AppColors.darkBackground,
-        body: const Center(
+        body: Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
@@ -55,7 +55,7 @@ class EventDetailScreen extends ConsumerWidget {
                 const SizedBox(height: 24),
                 if (event.description != null &&
                     event.description!.isNotEmpty) ...[
-                  _SectionLabel('About'),
+                  const _SectionLabel('About'),
                   const SizedBox(height: 10),
                   Text(
                     event.description!,
@@ -91,7 +91,7 @@ class _EventSliverAppBar extends StatelessWidget {
         icon: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: AppColors.darkBackground.withOpacity(0.7),
+            color: AppColors.darkBackground.withValues(alpha: 0.7),
             shape: BoxShape.circle,
           ),
           child: const Icon(Icons.arrow_back, size: 20),
@@ -104,7 +104,7 @@ class _EventSliverAppBar extends StatelessWidget {
             icon: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppColors.darkBackground.withOpacity(0.7),
+                color: AppColors.darkBackground.withValues(alpha: 0.7),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.trending_up_rounded, size: 20),
@@ -120,7 +120,7 @@ class _EventSliverAppBar extends StatelessWidget {
           icon: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: AppColors.darkBackground.withOpacity(0.7),
+              color: AppColors.darkBackground.withValues(alpha: 0.7),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.share_outlined, size: 20),
@@ -169,7 +169,7 @@ class _EventSliverAppBar extends StatelessWidget {
                       _TypeChip(event.typeLabel),
                       if (event.isOnline) ...[
                         const SizedBox(width: 8),
-                        _TypeChip('Online', color: Colors.green),
+                        const _TypeChip('Online', color: Colors.green),
                       ],
                     ],
                   ),
@@ -224,7 +224,7 @@ class _TypeChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: c.withOpacity(0.2),
+        color: c.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(label,
@@ -245,7 +245,7 @@ class _RsvpSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel('Will you attend?'),
+        const _SectionLabel('Will you attend?'),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -320,7 +320,7 @@ class _RsvpButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: isSelected
-                ? color.withOpacity(0.2)
+                ? color.withValues(alpha: 0.2)
                 : AppColors.darkSurface,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
@@ -476,7 +476,7 @@ class _MetaRow extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.15),
+              color: iconColor.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: iconColor, size: 20),

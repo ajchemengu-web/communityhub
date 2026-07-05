@@ -175,13 +175,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   ),
 
                   // ── Reposts ────────────────────────────────
-                  _EmptyTab(
+                  const _EmptyTab(
                     icon: Icons.repeat_rounded,
                     message: 'No reposts yet',
                   ),
 
                   // ── Tagged ─────────────────────────────────
-                  _EmptyTab(
+                  const _EmptyTab(
                     icon: Icons.person_pin_outlined,
                     message: 'No tagged posts',
                   ),
@@ -483,8 +483,8 @@ class _ProfileHeader extends StatelessWidget {
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => context.push(AppRoutes.editProfile),
-                  child: Row(
-                    children: const [
+                  child: const Row(
+                    children: [
                       Icon(Icons.add,
                           color: Colors.white54, size: 14),
                       SizedBox(width: 2),
@@ -881,9 +881,9 @@ class _DashboardScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.white10),
             ),
-            child: Column(
+            child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text('Creator tips',
                     style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
                 SizedBox(height: 12),

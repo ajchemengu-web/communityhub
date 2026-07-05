@@ -119,7 +119,7 @@ class CommunitiesRepository {
         .from('communities')
         .select('*')
         .eq('id', communityId)
-        .single() as Map<String, dynamic>;
+        .single();
 
     final m = Map<String, dynamic>.from(row);
 
@@ -284,7 +284,7 @@ class CommunitiesRepository {
             .from('communities')
             .insert(payload)
             .select('*')
-            .single() as Map<String, dynamic>;
+            .single();
         break;
       } catch (e) {
         final msg = e.toString();
@@ -389,7 +389,7 @@ class CommunitiesRepository {
       'is_pinned': isPinned,
     }).select(
             '*, users:author_id(full_name, username, avatar_url)')
-        .single() as Map<String, dynamic>;
+        .single();
 
     return AnnouncementModel.fromMap(row);
   }
@@ -524,7 +524,7 @@ class CommunitiesRepository {
         'is_default': false,
         'channel_type': channelType,
         'created_by': uid,
-      }).select().single() as Map<String, dynamic>;
+      }).select().single();
       return CommunityChannelModel.fromMap(row);
     } catch (_) {
       return null;

@@ -38,7 +38,7 @@ class LiveRepository {
           'is_active': true,
         })
         .select(_streamSelect)
-        .single() as Map<String, dynamic>;
+        .single();
 
     return LiveStreamModel.fromMap(row);
   }
@@ -104,7 +104,7 @@ class LiveRepository {
           'content': content,
         })
         .select(_commentSelect)
-        .single() as Map<String, dynamic>;
+        .single();
 
     return LiveCommentModel.fromMap(row);
   }

@@ -294,7 +294,7 @@ class _StoryRowSkeletonState extends State<_StoryRowSkeleton>
               height: 60,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.darkSurface2.withOpacity(_anim.value),
+                color: AppColors.darkSurface2.withValues(alpha: _anim.value),
               ),
             ),
             const SizedBox(height: 4),
@@ -303,7 +303,7 @@ class _StoryRowSkeletonState extends State<_StoryRowSkeleton>
               height: 8,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(4),
-                color: AppColors.darkSurface2.withOpacity(_anim.value),
+                color: AppColors.darkSurface2.withValues(alpha: _anim.value),
               ),
             ),
           ],

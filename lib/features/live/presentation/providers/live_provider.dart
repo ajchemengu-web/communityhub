@@ -91,7 +91,7 @@ class LiveCommentsNotifier extends StateNotifier<List<LiveCommentModel>> {
                     user:users!user_id(full_name, avatar_url)
                   ''')
                   .eq('id', payload.newRecord['id'] as String)
-                  .single() as Map<String, dynamic>;
+                  .single();
 
               state = [...state, LiveCommentModel.fromMap(row)];
             } catch (_) {}

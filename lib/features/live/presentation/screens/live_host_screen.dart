@@ -123,7 +123,7 @@ class _LiveHostScreenState extends ConsumerState<LiveHostScreen> {
                     onPressed: _toggleMic,
                   ),
                   TextButton(
-                    onPressed: () => _confirmEnd(context),
+                    onPressed: _confirmEnd,
                     child: const Text('End',
                         style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700)),
                   ),
@@ -158,7 +158,7 @@ class _LiveHostScreenState extends ConsumerState<LiveHostScreen> {
     );
   }
 
-  Future<void> _confirmEnd(BuildContext context) async {
+  Future<void> _confirmEnd() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(

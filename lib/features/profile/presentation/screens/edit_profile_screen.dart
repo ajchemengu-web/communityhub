@@ -310,7 +310,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
                     const SizedBox(height: 20),
 
-                    _SectionLabel('Basic Info'),
+                    const _SectionLabel('Basic Info'),
                     const SizedBox(height: 12),
 
                     _Field(
@@ -342,7 +342,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     ),
 
                     const SizedBox(height: 24),
-                    _SectionLabel('About You'),
+                    const _SectionLabel('About You'),
                     const SizedBox(height: 12),
 
                     _Field(
@@ -354,7 +354,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     ),
 
                     const SizedBox(height: 24),
-                    _SectionLabel('Community'),
+                    const _SectionLabel('Community'),
                     const SizedBox(height: 12),
 
                     _Field(

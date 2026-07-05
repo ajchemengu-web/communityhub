@@ -43,7 +43,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen>
           SliverAppBar(
             backgroundColor: AppColors.darkBackground,
             pinned: true,
-            title: Text('Events', style: AppTextStyles.titleLarge),
+            title: const Text('Events', style: AppTextStyles.titleLarge),
             actions: [
               IconButton(
                 icon: const Icon(Icons.add, color: AppColors.primary),
@@ -133,7 +133,7 @@ class _TypeFilterRow extends ConsumerWidget {
             onSelected: (_) =>
                 ref.read(eventsProvider.notifier).setTypeFilter(type),
             backgroundColor: AppColors.darkSurface,
-            selectedColor: AppColors.primary.withOpacity(0.2),
+            selectedColor: AppColors.primary.withValues(alpha: 0.2),
             checkmarkColor: AppColors.primary,
             labelStyle: AppTextStyles.labelMedium.copyWith(
               color: selected ? AppColors.primary : AppColors.textSecondary,
@@ -260,7 +260,7 @@ class _EventCard extends StatelessWidget {
                   Row(
                     children: [
                       if (event.communityName != null) ...[
-                        Icon(Icons.group_outlined,
+                        const Icon(Icons.group_outlined,
                             size: 14,
                             color: AppColors.textSecondary),
                         const SizedBox(width: 4),
@@ -274,7 +274,7 @@ class _EventCard extends StatelessWidget {
                         ),
                       ] else
                         const Spacer(),
-                      Icon(Icons.people_outline,
+                      const Icon(Icons.people_outline,
                           size: 14, color: AppColors.textSecondary),
                       const SizedBox(width: 4),
                       Text(
@@ -347,7 +347,7 @@ class _PlaceholderCover extends StatelessWidget {
         child: Icon(
           _typeIcon(event.type),
           size: 48,
-          color: Colors.white.withOpacity(0.5),
+          color: Colors.white.withValues(alpha: 0.5),
         ),
       ),
     );
@@ -395,7 +395,7 @@ class _DateBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.darkBackground.withOpacity(0.85),
+        color: AppColors.darkBackground.withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -444,7 +444,7 @@ class _TypeBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.15),
+        color: AppColors.primary.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
@@ -461,7 +461,7 @@ class _OnlineBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.green.withOpacity(0.15),
+        color: Colors.green.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
@@ -487,7 +487,7 @@ class _RsvpBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(

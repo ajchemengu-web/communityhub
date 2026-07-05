@@ -29,7 +29,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
 
           // ── Account ───────────────────────────────────────
-          _SectionHeader('Account'),
+          const _SectionHeader('Account'),
           _SettingsTile(
             icon: Icons.person_outline_rounded,
             title: 'Edit Profile',
@@ -54,7 +54,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
 
           // ── Giving ──────────────────────────────────────────
-          _SectionHeader('Giving'),
+          const _SectionHeader('Giving'),
           _SettingsTile(
             icon: Icons.volunteer_activism_outlined,
             title: 'Give',
@@ -69,7 +69,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
 
           // ── Marketplace ─────────────────────────────────────
-          _SectionHeader('Marketplace'),
+          const _SectionHeader('Marketplace'),
           _SettingsTile(
             icon: Icons.storefront_outlined,
             title: 'Browse Marketplace',
@@ -89,7 +89,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
 
           // ── Privacy ───────────────────────────────────────
-          _SectionHeader('Privacy & Safety'),
+          const _SectionHeader('Privacy & Safety'),
           _SettingsTile(
             icon: Icons.visibility_outlined,
             title: 'Account Privacy',
@@ -108,7 +108,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
 
           // ── Notifications ─────────────────────────────────
-          _SectionHeader('Notifications'),
+          const _SectionHeader('Notifications'),
           _SettingsTile(
             icon: Icons.notifications_outlined,
             title: 'Push Notifications',
@@ -118,7 +118,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
 
           // ── Support ───────────────────────────────────────
-          _SectionHeader('Support'),
+          const _SectionHeader('Support'),
           _SettingsTile(
             icon: Icons.help_outline_rounded,
             title: 'Help Center',
@@ -144,7 +144,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
 
           // ── Danger zone ───────────────────────────────────
-          _SectionHeader('Account Actions'),
+          const _SectionHeader('Account Actions'),
           _SettingsTile(
             icon: Icons.logout_rounded,
             title: 'Sign Out',
@@ -393,7 +393,7 @@ class SettingsScreen extends ConsumerWidget {
               Navigator.of(ctx).pop();
               ref.read(authNotifierProvider.notifier).signOut();
             },
-            child: Text(
+            child: const Text(
               'Sign Out',
               style: TextStyle(color: AppColors.error),
             ),

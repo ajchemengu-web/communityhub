@@ -1,4 +1,5 @@
 /// CommunityHub — Named Route Paths
+library;
 
 abstract class AppRoutes {
   // ── Auth ──────────────────────────────────────────────────

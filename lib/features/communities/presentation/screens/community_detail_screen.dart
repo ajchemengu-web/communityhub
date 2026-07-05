@@ -8,9 +8,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../../../core/constants/app_routes.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_text_styles.dart';
 import '../../data/communities_repository.dart';
-import '../../domain/models/announcement_model.dart';
 import '../../domain/models/community_channel_model.dart';
 import '../../domain/models/community_model.dart';
 import '../providers/communities_provider.dart';
@@ -425,17 +423,17 @@ class _CommunityDetailScreenState
           // ── Other groups (members list style) ───────────────────
           if (!c.isMember) ...[
             const SizedBox(height: 32),
-            Center(
+            const Center(
               child: Column(
                 children: [
-                  const Text(
+                  Text(
                     'Other groups added to the community\nwill appear here.',
                     textAlign: TextAlign.center,
                     style:
                         TextStyle(color: Colors.white38, fontSize: 13, height: 1.5),
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
+                  SizedBox(height: 8),
+                  Text(
                     'Community members can join these groups.',
                     textAlign: TextAlign.center,
                     style:
@@ -482,7 +480,7 @@ class _CommunityDetailScreenState
                               ? CachedNetworkImageProvider(avatar)
                               : null,
                           backgroundColor:
-                              AppColors.primary.withOpacity(0.2),
+                              AppColors.primary.withValues(alpha: 0.2),
                           child: avatar == null
                               ? const Icon(Icons.person,
                                   color: AppColors.primary)
@@ -875,9 +873,9 @@ class _ManageGroupsScreenState
             )
           else if (_channels.isEmpty) ...[
             // No channels in DB yet — show the two defaults
-            _ManageGroupRow(
+            const _ManageGroupRow(
               icon: Icons.campaign_rounded,
-              iconBg: const Color(0xFF1A7A6B),
+              iconBg: Color(0xFF1A7A6B),
               name: 'Announcements',
               subtitle: '',
               canRemove: false,
@@ -1310,7 +1308,7 @@ class _CommunityChannelScreenState
                     child: Container(
                       width: 44,
                       height: 44,
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: AppColors.primary,
                         shape: BoxShape.circle,
                       ),
@@ -1454,10 +1452,10 @@ class _ChatBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.1),
+          color: AppColors.primary.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
           border:
-              Border.all(color: AppColors.primary.withOpacity(0.2)),
+              Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1497,7 +1495,7 @@ class _ChatBubble extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: isMe
-              ? AppColors.primary.withOpacity(0.85)
+              ? AppColors.primary.withValues(alpha: 0.85)
               : const Color(0xFF1E1E1E),
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(14),
@@ -1514,7 +1512,7 @@ class _ChatBubble extends StatelessWidget {
             if (!isMe)
               Text(sender,
                   style: TextStyle(
-                      color: AppColors.primary.withOpacity(0.9),
+                      color: AppColors.primary.withValues(alpha: 0.9),
                       fontSize: 11,
                       fontWeight: FontWeight.w600)),
             if (!isMe) const SizedBox(height: 2),
@@ -1527,7 +1525,7 @@ class _ChatBubble extends StatelessWidget {
               child: Text(
                 '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
                 style: TextStyle(
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 10),
               ),
             ),

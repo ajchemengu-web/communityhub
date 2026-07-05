@@ -151,9 +151,9 @@ class _ChurchSliverAppBar extends StatelessWidget {
                 imageUrl: church.coverUrl!,
                 fit: BoxFit.cover,
                 placeholder: (_, __) => Container(
-                    color: AppColors.primary.withOpacity(0.3)),
+                    color: AppColors.primary.withValues(alpha: 0.3)),
                 errorWidget: (_, __, ___) =>
-                    Container(color: AppColors.primary.withOpacity(0.3)),
+                    Container(color: AppColors.primary.withValues(alpha: 0.3)),
               )
             else
               Container(
@@ -247,7 +247,7 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.5),
+        color: Colors.black.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -421,7 +421,7 @@ class _QuickAction extends StatelessWidget {
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.15),
+              color: AppColors.primary.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(icon, color: AppColors.primary, size: 24),
@@ -498,7 +498,7 @@ class _AnnouncementCard extends StatelessWidget {
         color: AppColors.darkSurface,
         borderRadius: BorderRadius.circular(12),
         border: announcement.isPinned
-            ? Border.all(color: AppColors.secondary.withOpacity(0.6))
+            ? Border.all(color: AppColors.secondary.withValues(alpha: 0.6))
             : Border.all(color: AppColors.darkDivider),
       ),
       child: Column(
@@ -511,7 +511,7 @@ class _AnnouncementCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(
                   horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: AppColors.secondary.withOpacity(0.15),
+                color: AppColors.secondary.withValues(alpha: 0.15),
                 borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(12)),
               ),
@@ -607,12 +607,12 @@ class _PrayerCard extends ConsumerWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: prayer.isAnswered
-            ? AppColors.success.withOpacity(0.08)
+            ? AppColors.success.withValues(alpha: 0.08)
             : AppColors.darkSurface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: prayer.isAnswered
-              ? AppColors.success.withOpacity(0.4)
+              ? AppColors.success.withValues(alpha: 0.4)
               : AppColors.darkDivider,
         ),
       ),
@@ -647,7 +647,7 @@ class _PrayerCard extends ConsumerWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppColors.success.withOpacity(0.2),
+                              color: AppColors.success.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -693,7 +693,7 @@ class _PrayerCard extends ConsumerWidget {
                       horizontal: 14, vertical: 7),
                   decoration: BoxDecoration(
                     color: prayer.hasPrayed
-                        ? AppColors.primary.withOpacity(0.2)
+                        ? AppColors.primary.withValues(alpha: 0.2)
                         : AppColors.darkSurface2,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
@@ -768,10 +768,10 @@ class _AddPrayerButton extends ConsumerWidget {
         padding:
             const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.15),
+          color: AppColors.primary.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: AppColors.primary.withOpacity(0.4)),
+              color: AppColors.primary.withValues(alpha: 0.4)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -969,7 +969,7 @@ class _EmptyChurchState extends StatelessWidget {
               width: 100,
               height: 100,
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.church_outlined,
@@ -1069,7 +1069,7 @@ class _MiniAvatar extends StatelessWidget {
           : Container(
               width: 32,
               height: 32,
-              color: AppColors.primary.withOpacity(0.4),
+              color: AppColors.primary.withValues(alpha: 0.4),
               child: Center(
                 child: Text(
                   name.isNotEmpty ? name[0].toUpperCase() : '?',

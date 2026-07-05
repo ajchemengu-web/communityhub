@@ -100,7 +100,7 @@ class EventsRepository {
         .from('events')
         .select(_eventSelect)
         .eq('id', eventId)
-        .single() as Map<String, dynamic>;
+        .single();
     return EventModel.fromMap(row, currentUserId: uid);
   }
 
@@ -137,7 +137,7 @@ class EventsRepository {
           'maybe_count': 0,
         })
         .select(_eventSelect)
-        .single() as Map<String, dynamic>;
+        .single();
 
     return EventModel.fromMap(row, currentUserId: uid);
   }

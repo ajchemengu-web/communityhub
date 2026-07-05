@@ -37,8 +37,12 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
   @override
   void dispose() {
-    for (final c in _ctrls) c.dispose();
-    for (final n in _nodes) n.dispose();
+    for (final c in _ctrls) {
+      c.dispose();
+    }
+    for (final n in _nodes) {
+      n.dispose();
+    }
     _timer?.cancel();
     super.dispose();
   }
@@ -78,7 +82,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       // Auth state change listener will navigate automatically
     } catch (e) {
       _showError('Invalid code. Please try again.');
-      for (final c in _ctrls) c.clear();
+      for (final c in _ctrls) {
+        c.clear();
+      }
       if (mounted) _nodes[0].requestFocus();
     } finally {
       if (mounted) setState(() => _isLoading = false);

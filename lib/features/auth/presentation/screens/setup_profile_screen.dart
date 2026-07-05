@@ -379,7 +379,7 @@ class _Step1 extends ConsumerWidget {
             const SizedBox(height: 32),
 
             // ── Full name ────────────────────────────────
-            _FieldLabel('Full Name'),
+            const _FieldLabel('Full Name'),
             const SizedBox(height: 8),
             TextFormField(
               controller: fullNameCtrl,
@@ -401,7 +401,7 @@ class _Step1 extends ConsumerWidget {
             const SizedBox(height: 20),
 
             // ── Username ─────────────────────────────────
-            _FieldLabel('Username'),
+            const _FieldLabel('Username'),
             const SizedBox(height: 8),
             TextFormField(
               controller: usernameCtrl,
@@ -469,7 +469,7 @@ class _Step2 extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Bio ──────────────────────────────────────
-            _FieldLabel('Bio'),
+            const _FieldLabel('Bio'),
             const SizedBox(height: 8),
             TextFormField(
               controller: bioCtrl,
@@ -491,7 +491,7 @@ class _Step2 extends ConsumerWidget {
             const SizedBox(height: 20),
 
             // ── Religion (required) ──────────────────────
-            _FieldLabel('Your Faith *'),
+            const _FieldLabel('Your Faith *'),
             const SizedBox(height: 4),
             Text(
               'This personalises your feed and default scripture community',
@@ -548,7 +548,7 @@ class _Step2 extends ConsumerWidget {
             ),
 
             // ── Website ──────────────────────────────────
-            _FieldLabel('Website'),
+            const _FieldLabel('Website'),
             const SizedBox(height: 8),
             TextFormField(
               controller: websiteCtrl,
@@ -597,7 +597,7 @@ class _BottomActions extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppColors.darkBackground,
         border: Border(
           top: BorderSide(color: AppColors.darkBorder, width: 1),
@@ -791,7 +791,7 @@ class _ReligionCard extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
           decoration: BoxDecoration(
-            color: selected ? color.withOpacity(0.15) : AppColors.darkSurface,
+            color: selected ? color.withValues(alpha: 0.15) : AppColors.darkSurface,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: selected ? color : AppColors.darkBorder,
@@ -821,66 +821,6 @@ class _ReligionCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Icon(Icons.check_circle, color: color, size: 20),
               ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HubChip extends StatelessWidget {
-  const _HubChip({
-    required this.label,
-    required this.icon,
-    required this.value,
-    required this.selected,
-    required this.onTap,
-    this.color,
-  });
-
-  final String label;
-  final IconData icon;
-  final String value;
-  final bool selected;
-  final VoidCallback onTap;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final activeColor = color ?? AppColors.secondary;
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: selected
-                ? activeColor.withOpacity(0.15)
-                : AppColors.darkSurface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? activeColor : AppColors.darkBorder,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                color: selected ? activeColor : AppColors.textDarkSecondary,
-                size: 22,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: AppTextStyles.labelMedium.copyWith(
-                  color: selected ? activeColor : AppColors.textDarkSecondary,
-                  fontWeight:
-                      selected ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
             ],
           ),
         ),

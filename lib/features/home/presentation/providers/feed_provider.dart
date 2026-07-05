@@ -189,7 +189,9 @@ class FeedNotifier
       callback: (payload) async {
         final newRow = payload.newRecord;
         if (hubType != AppConstants.hubAll &&
-            newRow['hub_type'] != hubType) return;
+            newRow['hub_type'] != hubType) {
+          return;
+        }
 
         // Fetch the full row with user join
         try {

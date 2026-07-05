@@ -147,7 +147,7 @@ class _CreateCommunityScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // ── Hub type ───────────────────────────────────
-                  _SectionLabel('Hub Type'),
+                  const _SectionLabel('Hub Type'),
                   const SizedBox(height: 8),
                   _HubTypeSelector(
                     value: state.hubType,
@@ -157,7 +157,7 @@ class _CreateCommunityScreenState
                   const SizedBox(height: 24),
 
                   // ── Name ───────────────────────────────────────
-                  _SectionLabel('Community Name *'),
+                  const _SectionLabel('Community Name *'),
                   const SizedBox(height: 8),
                   _StyledField(
                     controller: _nameCtrl,
@@ -185,7 +185,7 @@ class _CreateCommunityScreenState
                   const SizedBox(height: 20),
 
                   // ── Description ────────────────────────────────
-                  _SectionLabel('Description'),
+                  const _SectionLabel('Description'),
                   const SizedBox(height: 8),
                   _StyledField(
                     controller: _descCtrl,
@@ -233,7 +233,7 @@ class _CreateCommunityScreenState
 
                     const SizedBox(height: 20),
 
-                    _SectionLabel('Location'),
+                    const _SectionLabel('Location'),
                     const SizedBox(height: 8),
                     _StyledField(
                       controller: _locationCtrl,
@@ -252,7 +252,7 @@ class _CreateCommunityScreenState
                   ],
 
                   // ── Website ────────────────────────────────────
-                  _SectionLabel('Website'),
+                  const _SectionLabel('Website'),
                   const SizedBox(height: 8),
                   _StyledField(
                     controller: _websiteCtrl,
@@ -276,7 +276,7 @@ class _CreateCommunityScreenState
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         disabledBackgroundColor:
-                            AppColors.primary.withOpacity(0.4),
+                            AppColors.primary.withValues(alpha: 0.4),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -345,7 +345,7 @@ class _CoverPicker extends StatelessWidget {
                     width: 60,
                     height: 60,
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.15),
+                      color: AppColors.primary.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -382,7 +382,7 @@ class _CoverPicker extends StatelessWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withOpacity(0.5),
+                      Colors.black.withValues(alpha: 0.5),
                     ],
                   ),
                 ),
@@ -399,7 +399,7 @@ class _CoverPicker extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withValues(alpha: 0.6),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.close,
@@ -487,7 +487,7 @@ class _HubTypeSelector extends StatelessWidget {
                     horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
                   color: value == h.id
-                      ? AppColors.primary.withOpacity(0.12)
+                      ? AppColors.primary.withValues(alpha: 0.12)
                       : AppColors.surfaceDark,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
@@ -504,7 +504,7 @@ class _HubTypeSelector extends StatelessWidget {
                       height: 40,
                       decoration: BoxDecoration(
                         color: value == h.id
-                            ? AppColors.primary.withOpacity(0.2)
+                            ? AppColors.primary.withValues(alpha: 0.2)
                             : AppColors.backgroundDark,
                         borderRadius: BorderRadius.circular(10),
                       ),
@@ -697,7 +697,7 @@ class _SubmitButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: canSubmit
               ? AppColors.primary
-              : AppColors.primary.withOpacity(0.3),
+              : AppColors.primary.withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
@@ -789,7 +789,7 @@ class _StyledField extends StatelessWidget {
         disabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
-              color: AppColors.divider.withOpacity(0.5)),
+              color: AppColors.divider.withValues(alpha: 0.5)),
         ),
         contentPadding: EdgeInsets.symmetric(
           horizontal: 14,

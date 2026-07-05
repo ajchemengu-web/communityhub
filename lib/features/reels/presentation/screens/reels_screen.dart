@@ -927,10 +927,10 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 color: Colors.white24,
                 borderRadius: BorderRadius.circular(2)),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Row(
-              children: const [
+              children: [
                 Text('Comments',
                     style: TextStyle(
                         color: Colors.white,

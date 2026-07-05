@@ -1,15 +1,12 @@
-import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
-import '../../domain/models/call_model.dart';
 import '../providers/call_provider.dart';
 
 // ── Call Screen ────────────────────────────────────────────────────
@@ -76,7 +73,7 @@ class _CallScreenState extends ConsumerState<CallScreen>
         children: [
           // ── Background: video feed or avatar ────────────────
           isVideo && !isRinging
-              ? _VideoBackground(isLocalPreview: false)
+              ? const _VideoBackground(isLocalPreview: false)
               : _AvatarBackground(name: displayName, avatarUrl: avatarUrl),
 
           // ── Dark overlay ─────────────────────────────────────
@@ -303,7 +300,7 @@ class _PulseRing extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: Colors.white
-                        .withOpacity(0.2 * (1 - controller.value)),
+                        .withValues(alpha: 0.2 * (1 - controller.value)),
                     width: 2,
                   ),
                 ),
@@ -318,7 +315,7 @@ class _PulseRing extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.white
-                      .withOpacity(0.05 * (1 - controller.value)),
+                      .withValues(alpha: 0.05 * (1 - controller.value)),
                 ),
               ),
             ),
@@ -445,7 +442,7 @@ class _ActiveCallControls extends StatelessWidget {
                 icon: state.isMuted ? Icons.mic_off : Icons.mic,
                 color: state.isMuted
                     ? Colors.white
-                    : Colors.white.withOpacity(0.2),
+                    : Colors.white.withValues(alpha: 0.2),
                 iconColor: state.isMuted ? Colors.black : Colors.white,
                 label: state.isMuted ? 'Unmute' : 'Mute',
                 onTap: notifier.toggleMute,
@@ -456,7 +453,7 @@ class _ActiveCallControls extends StatelessWidget {
                     : Icons.volume_off,
                 color: state.isSpeakerOn
                     ? Colors.white
-                    : Colors.white.withOpacity(0.2),
+                    : Colors.white.withValues(alpha: 0.2),
                 iconColor:
                     state.isSpeakerOn ? Colors.black : Colors.white,
                 label: 'Speaker',
@@ -469,7 +466,7 @@ class _ActiveCallControls extends StatelessWidget {
                       : Icons.videocam,
                   color: state.isCameraOff
                       ? Colors.white
-                      : Colors.white.withOpacity(0.2),
+                      : Colors.white.withValues(alpha: 0.2),
                   iconColor:
                       state.isCameraOff ? Colors.black : Colors.white,
                   label: state.isCameraOff ? 'Camera' : 'Camera',
@@ -478,7 +475,7 @@ class _ActiveCallControls extends StatelessWidget {
               if (isVideo)
                 _CallButton(
                   icon: Icons.flip_camera_ios,
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   iconColor: Colors.white,
                   label: 'Flip',
                   onTap: notifier.flipCamera,
@@ -617,7 +614,7 @@ class _IncomingCallOverlayState extends ConsumerState<IncomingCallOverlay>
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 blurRadius: 20,
                 offset: const Offset(0, 8),
               ),
@@ -641,8 +638,8 @@ class _IncomingCallOverlayState extends ConsumerState<IncomingCallOverlay>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: AppColors.success.withOpacity(
-                                  0.4 * (1 - _pulseCtrl.value)),
+                              color: AppColors.success.withValues(
+                                  alpha: 0.4 * (1 - _pulseCtrl.value)),
                               width: 2,
                             ),
                           ),

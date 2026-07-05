@@ -120,7 +120,7 @@ class NotificationsNotifier extends StateNotifier<NotificationsState> {
                     actor:users!actor_id(full_name, avatar_url)
                   ''')
                   .eq('id', row['id'] as String)
-                  .single() as Map<String, dynamic>;
+                  .single();
 
               final notification = NotificationModel.fromMap(full);
               state = state.copyWith(notifications: [

@@ -90,10 +90,10 @@ class _VideoInfo extends StatelessWidget {
         const SizedBox(height: 10),
         Row(
           children: [
-            CircleAvatar(
+            const CircleAvatar(
               radius: 16,
               backgroundColor: AppColors.primary,
-              child: const Icon(Icons.smart_display,
+              child: Icon(Icons.smart_display,
                   color: Colors.white, size: 16),
             ),
             const SizedBox(width: 10),

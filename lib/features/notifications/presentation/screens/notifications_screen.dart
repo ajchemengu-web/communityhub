@@ -100,7 +100,7 @@ class _NotificationsScreenState
       backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
         backgroundColor: AppColors.darkBackground,
-        title: Text('Notifications', style: AppTextStyles.titleLarge),
+        title: const Text('Notifications', style: AppTextStyles.titleLarge),
         actions: [
           if (state.hasUnread)
             TextButton(
@@ -581,7 +581,7 @@ class _EmptyState extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          Text("You're all caught up!", style: AppTextStyles.titleMedium),
+          const Text("You're all caught up!", style: AppTextStyles.titleMedium),
           const SizedBox(height: 8),
           Text(
             'New activity will appear here',

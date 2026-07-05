@@ -151,7 +151,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                                         horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
                                       color: AppColors.primary
-                                          .withOpacity(0.15),
+                                          .withValues(alpha: 0.15),
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
@@ -332,7 +332,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete',
+            child: const Text('Delete',
                 style: TextStyle(color: AppColors.error)),
           ),
         ],
@@ -378,7 +378,7 @@ class _PostBody extends StatelessWidget {
                 backgroundImage: post.avatarUrl != null
                     ? CachedNetworkImageProvider(post.avatarUrl!)
                     : null,
-                backgroundColor: AppColors.primary.withOpacity(0.2),
+                backgroundColor: AppColors.primary.withValues(alpha: 0.2),
                 child: post.avatarUrl == null
                     ? const Icon(Icons.person, color: AppColors.primary)
                     : null,
@@ -411,7 +411,7 @@ class _PostBody extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.12),
+                  color: AppColors.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(post.hubType,
@@ -667,7 +667,7 @@ class _CommentTileState extends State<_CommentTile> {
               backgroundImage: comment.avatarUrl != null
                   ? CachedNetworkImageProvider(comment.avatarUrl!)
                   : null,
-              backgroundColor: AppColors.primary.withOpacity(0.2),
+              backgroundColor: AppColors.primary.withValues(alpha: 0.2),
               child: comment.avatarUrl == null
                   ? Icon(Icons.person,
                       color: AppColors.primary,
@@ -684,13 +684,13 @@ class _CommentTileState extends State<_CommentTile> {
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: AppColors.darkSurface,
                       borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(4),
-                        topRight: const Radius.circular(14),
-                        bottomLeft: const Radius.circular(14),
-                        bottomRight: const Radius.circular(14),
+                        topLeft: Radius.circular(4),
+                        topRight: Radius.circular(14),
+                        bottomLeft: Radius.circular(14),
+                        bottomRight: Radius.circular(14),
                       ),
                     ),
                     child: Column(
@@ -902,9 +902,9 @@ class _CommentTileState extends State<_CommentTile> {
               ),
             if (widget.onDelete != null)
               ListTile(
-                leading: Icon(Icons.delete_outline,
+                leading: const Icon(Icons.delete_outline,
                     color: AppColors.error),
-                title: Text('Delete',
+                title: const Text('Delete',
                     style: TextStyle(color: AppColors.error)),
                 onTap: () {
                   Navigator.pop(context);
@@ -945,7 +945,7 @@ class _ReplyBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.primary.withOpacity(0.1),
+      color: AppColors.primary.withValues(alpha: 0.1),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
@@ -960,7 +960,7 @@ class _ReplyBanner extends StatelessWidget {
                   const TextSpan(text: 'Replying to '),
                   TextSpan(
                     text: comment.displayName,
-                    style: TextStyle(
+                    style: const TextStyle(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w600),
                   ),
@@ -1010,9 +1010,9 @@ class _CommentInput extends StatelessWidget {
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: AppColors.darkSurface,
-          border: const Border(
+          border: Border(
               top: BorderSide(color: AppColors.darkDivider)),
         ),
         child: Row(

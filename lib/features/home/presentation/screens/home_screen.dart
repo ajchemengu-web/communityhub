@@ -521,25 +521,25 @@ class _PostSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
+    return const Padding(
+      padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
             _Shimmer(width: 36, height: 36, radius: 18),
-            const SizedBox(width: 10),
+            SizedBox(width: 10),
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               _Shimmer(width: 120, height: 12),
-              const SizedBox(height: 4),
+              SizedBox(height: 4),
               _Shimmer(width: 80, height: 10),
             ]),
           ]),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           _Shimmer(width: double.infinity, height: 200),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           _Shimmer(width: 200, height: 12),
-          const SizedBox(height: 6),
+          SizedBox(height: 6),
           _Shimmer(width: 150, height: 10),
         ],
       ),

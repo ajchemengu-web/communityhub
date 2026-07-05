@@ -199,7 +199,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
         backgroundColor: AppColors.darkBackground,
-        title: Text('Create Event', style: AppTextStyles.titleLarge),
+        title: const Text('Create Event', style: AppTextStyles.titleLarge),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => context.pop(),
@@ -250,7 +250,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             const SizedBox(height: 24),
 
             // Event type
-            _SectionLabel('Event Type'),
+            const _SectionLabel('Event Type'),
             const SizedBox(height: 12),
             _TypeSelector(
               selected: _type,
@@ -259,7 +259,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             const SizedBox(height: 24),
 
             // Date & time
-            _SectionLabel('Date & Time'),
+            const _SectionLabel('Date & Time'),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -283,7 +283,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             const SizedBox(height: 24),
 
             // Online toggle
-            _SectionLabel('Location'),
+            const _SectionLabel('Location'),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(14),
@@ -320,7 +320,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                   Switch(
                     value: _isOnline,
                     onChanged: (v) => setState(() => _isOnline = v),
-                    activeColor: AppColors.primary,
+                    activeThumbColor: AppColors.primary,
                   ),
                 ],
               ),
@@ -398,7 +398,7 @@ class _CoverPicker extends StatelessWidget {
                   padding: const EdgeInsets.all(8),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: AppColors.darkBackground.withOpacity(0.8),
+                      color: AppColors.darkBackground.withValues(alpha: 0.8),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.edit_outlined,
@@ -442,7 +442,7 @@ class _TypeSelector extends StatelessWidget {
                 horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: isSelected
-                  ? AppColors.primary.withOpacity(0.2)
+                  ? AppColors.primary.withValues(alpha: 0.2)
                   : AppColors.darkSurface,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(

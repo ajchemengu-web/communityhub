@@ -53,10 +53,10 @@ class _SplashScreenState extends State<SplashScreen> {
                   width: 100,
                   height: 100,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
+                    color: Colors.white.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(28),
                     border: Border.all(
-                      color: AppColors.secondary.withOpacity(0.4),
+                      color: AppColors.secondary.withValues(alpha: 0.4),
                       width: 1.5,
                     ),
                   ),
@@ -112,7 +112,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 SizedBox(
                   width: 120,
                   child: LinearProgressIndicator(
-                    backgroundColor: Colors.white.withOpacity(0.1),
+                    backgroundColor: Colors.white.withValues(alpha: 0.1),
                     color: AppColors.secondary,
                     minHeight: 2,
                     borderRadius: BorderRadius.circular(2),
@@ -129,7 +129,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   child: Text(
                     '"For we are God\'s handiwork, created in Christ Jesus to do good works"',
                     style: AppTextStyles.verseText.copyWith(
-                      color: Colors.white.withOpacity(0.5),
+                      color: Colors.white.withValues(alpha: 0.5),
                       fontSize: 11,
                     ),
                     textAlign: TextAlign.center,
@@ -143,7 +143,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 Text(
                   '— Ephesians 2:10',
                   style: AppTextStyles.labelSmall.copyWith(
-                    color: AppColors.secondary.withOpacity(0.7),
+                    color: AppColors.secondary.withValues(alpha: 0.7),
                   ),
                 )
                     .animate(delay: 1200.ms)

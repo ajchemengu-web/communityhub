@@ -368,7 +368,7 @@ class _PhoneForm extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
+          const Text(
             'Include country code e.g. +254 for Kenya',
             style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
@@ -401,7 +401,7 @@ class _PhoneForm extends StatelessWidget {
           const SizedBox(height: 10),
           TextButton(
             onPressed: onBack,
-            child: Text('Use email instead',
+            child: const Text('Use email instead',
                 style: TextStyle(color: Colors.white38, fontSize: 13)),
           ),
         ],

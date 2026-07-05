@@ -48,8 +48,8 @@ class _QuranScreenState extends State<QuranScreen>
         backgroundColor: const Color(0xFF0A1628),
         elevation: 0,
         leading: const BackButton(color: Colors.white),
-        title: Row(
-          children: const [
+        title: const Row(
+          children: [
             Icon(Icons.mosque_outlined, color: Color(0xFF4CAF50), size: 22),
             SizedBox(width: 8),
             Text('The Holy Quran',
@@ -311,7 +311,7 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
                                     color: const Color(0xFF1A6B4A)
-                                        .withOpacity(0.3)),
+                                        .withValues(alpha: 0.3)),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.end,

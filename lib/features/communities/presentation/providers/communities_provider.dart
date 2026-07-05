@@ -106,8 +106,11 @@ class CommunitiesNotifier extends StateNotifier<CommunitiesState> {
     final discoverIdx = discover.indexWhere((c) => c.id == updated.id);
 
     if (updated.isMember && updated.isApproved) {
-      if (mineIdx == -1) mine.insert(0, updated);
-      else mine[mineIdx] = updated;
+      if (mineIdx == -1) {
+        mine.insert(0, updated);
+      } else {
+        mine[mineIdx] = updated;
+      }
     } else {
       if (mineIdx != -1) mine.removeAt(mineIdx);
     }

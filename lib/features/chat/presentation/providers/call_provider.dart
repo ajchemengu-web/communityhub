@@ -109,7 +109,7 @@ class CallNotifier extends StateNotifier<CallState> {
                     receiver:profiles!receiver_id(full_name, avatar_url)
                   ''')
                   .eq('id', row['id'] as String)
-                  .single() as Map<String, dynamic>;
+                  .single();
 
               final call = CallModel.fromMap(full);
               if (call.isRinging) {

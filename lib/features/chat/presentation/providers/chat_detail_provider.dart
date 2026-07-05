@@ -115,7 +115,7 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
                   .select(
                       'id, conversation_id, sender_id, content, type, media_url, media_thumbnail_url, reply_to_id, is_deleted, reactions, call_type, call_duration, call_status, created_at, users!sender_id(full_name, username, avatar_url)')
                   .eq('id', row['id'] as String)
-                  .single() as Map<String, dynamic>;
+                  .single();
 
               final msg = MessageModel.fromMap(full, currentUserId: uid);
               state = state.copyWith(
@@ -134,7 +134,6 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
             value: conversationId,
           ),
           callback: (payload) {
-            final uid = SupabaseService.currentUserId ?? '';
             final row =
                 Map<String, dynamic>.from(payload.newRecord);
             final msgId = row['id'] as String;
@@ -271,7 +270,7 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
   // ── Send media ─────────────────────────────────────────────
 
   Future<void> sendMediaMessage(File file, MessageType type) async {
-    final uid = SupabaseService.currentUserId!;
+    SupabaseService.currentUserId!; // fail fast if not authenticated
     state = state.copyWith(isSending: true);
 
     try {

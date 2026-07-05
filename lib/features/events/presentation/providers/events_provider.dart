@@ -98,13 +98,13 @@ class EventsNotifier extends StateNotifier<EventsState> {
 
   /// Update a single event's RSVP in all lists.
   void updateEventRsvp(EventModel updated) {
-    List<EventModel> _patch(List<EventModel> list) =>
+    List<EventModel> patch(List<EventModel> list) =>
         list.map((e) => e.id == updated.id ? updated : e).toList();
 
     state = state.copyWith(
-      upcoming: _patch(state.upcoming),
-      past: _patch(state.past),
-      myEvents: _patch(state.myEvents),
+      upcoming: patch(state.upcoming),
+      past: patch(state.past),
+      myEvents: patch(state.myEvents),
     );
   }
 }

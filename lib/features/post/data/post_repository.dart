@@ -80,8 +80,7 @@ class PostRepository {
     Map<String, dynamic> row;
     while (true) {
       try {
-        row = await _db.from('posts').insert(postPayload).select('id').single()
-            as Map<String, dynamic>;
+        row = await _db.from('posts').insert(postPayload).select('id').single();
         break;
       } catch (e) {
         final msg = e.toString();

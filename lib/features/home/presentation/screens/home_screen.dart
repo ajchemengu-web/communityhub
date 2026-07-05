@@ -375,9 +375,16 @@ class _FeedTab extends ConsumerStatefulWidget {
   ConsumerState<_FeedTab> createState() => _FeedTabState();
 }
 
-class _FeedTabState extends ConsumerState<_FeedTab> {
+class _FeedTabState extends ConsumerState<_FeedTab>
+    with AutomaticKeepAliveClientMixin<_FeedTab> {
   bool _isLoadingMore = false;
   bool _loadGuard = false; // synchronous guard — prevents duplicate calls before setState
+
+  // Without this, TabBarView disposes off-screen tabs by default —
+  // switching hub tabs would throw away the loaded feed, reset scroll
+  // position, and re-fetch every time you come back to a tab.
+  @override
+  bool get wantKeepAlive => true;
 
   Future<void> _loadMore() async {
     if (_loadGuard) return;
@@ -401,6 +408,7 @@ class _FeedTabState extends ConsumerState<_FeedTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // required by AutomaticKeepAliveClientMixin
     final feedAsync = ref.watch(feedProvider(widget.hubType));
 
     return feedAsync.when(

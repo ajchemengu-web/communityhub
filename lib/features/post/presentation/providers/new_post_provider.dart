@@ -20,6 +20,8 @@ class NewPostState {
     this.youtubeUrl,
     this.errorMessage,
     this.createdPostId,
+    this.uploadedCount = 0,
+    this.uploadTotal = 0,
   });
 
   final NewPostStatus status;
@@ -31,6 +33,12 @@ class NewPostState {
   final String? youtubeUrl;
   final String? errorMessage;
   final String? createdPostId;
+
+  /// Files uploaded so far / total this post needs — shown as
+  /// "Uploading N of M…" since Supabase Storage doesn't expose
+  /// byte-level progress for a binary upload.
+  final int uploadedCount;
+  final int uploadTotal;
 
   bool get canPost =>
       caption.trim().isNotEmpty && status != NewPostStatus.uploading;
@@ -45,6 +53,8 @@ class NewPostState {
     String? youtubeUrl,
     String? errorMessage,
     String? createdPostId,
+    int? uploadedCount,
+    int? uploadTotal,
   }) =>
       NewPostState(
         status: status ?? this.status,
@@ -56,6 +66,8 @@ class NewPostState {
         youtubeUrl: youtubeUrl ?? this.youtubeUrl,
         errorMessage: errorMessage ?? this.errorMessage,
         createdPostId: createdPostId ?? this.createdPostId,
+        uploadedCount: uploadedCount ?? this.uploadedCount,
+        uploadTotal: uploadTotal ?? this.uploadTotal,
       );
 }
 
@@ -101,7 +113,11 @@ class NewPostNotifier extends StateNotifier<NewPostState> {
   Future<void> submit() async {
     if (!state.canPost) return;
 
-    state = state.copyWith(status: NewPostStatus.uploading);
+    state = state.copyWith(
+      status: NewPostStatus.uploading,
+      uploadedCount: 0,
+      uploadTotal: state.mediaFiles.length,
+    );
 
     try {
       final postId = await _repo.createPost(
@@ -111,6 +127,8 @@ class NewPostNotifier extends StateNotifier<NewPostState> {
         mediaType: state.mediaType,
         tags: state.tags,
         youtubeUrl: state.youtubeUrl,
+        onUploadProgress: (completed, total) =>
+            state = state.copyWith(uploadedCount: completed, uploadTotal: total),
       );
 
       state = state.copyWith(

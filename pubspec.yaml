@@ -30,6 +30,7 @@ dependencies:
   smooth_page_indicator: ^1.1.0
   photo_view: ^0.15.0
   image_picker: ^1.1.2
+  flutter_image_compress: ^2.4.0
 
   # ── Camera & Live ─────────────────────────────────────────
   camera: ^0.11.0+2
@@ -94,6 +95,16 @@ dev_dependencies:
   riverpod_generator: ^2.4.3
   freezed: ^2.5.7
   json_serializable: ^6.8.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/app_icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#1A237E"
+  adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true

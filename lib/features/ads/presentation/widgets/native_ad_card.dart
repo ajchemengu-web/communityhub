@@ -50,8 +50,10 @@ class _NativeAdCardState extends State<NativeAdCard> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isLoaded || _bannerAd == null) return const SizedBox.shrink();
-
+    // Reserve the ad's final footprint from the first frame — swapping
+    // between SizedBox.shrink() and the loaded ad mid-scroll shifts every
+    // item below it, which is the layout-jank equivalent of an ad
+    // suddenly shoving the article you were reading down the page.
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
       color: AppColors.darkSurface,
@@ -67,9 +69,11 @@ class _NativeAdCardState extends State<NativeAdCard> {
             ),
           ),
           SizedBox(
-            width: _bannerAd!.size.width.toDouble(),
-            height: _bannerAd!.size.height.toDouble(),
-            child: AdWidget(ad: _bannerAd!),
+            width: AdSize.mediumRectangle.width.toDouble(),
+            height: AdSize.mediumRectangle.height.toDouble(),
+            child: _isLoaded && _bannerAd != null
+                ? AdWidget(ad: _bannerAd!)
+                : const ColoredBox(color: AppColors.darkSurface2),
           ),
           const SizedBox(height: 8),
         ],

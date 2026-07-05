@@ -1,7 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/models/comment_model.dart';
 
@@ -16,6 +19,9 @@ class PostRepository {
   // ── Create Post ───────────────────────────────────────────
 
   /// Creates a new post. Uploads media files first, then inserts the row.
+  /// [onUploadProgress] fires after each file finishes uploading with
+  /// (completed, total) — the UI shows this as "Uploading N of M…" since
+  /// Supabase Storage's binary upload doesn't expose byte-level progress.
   Future<String> createPost({
     required String caption,
     required String hubType,
@@ -23,6 +29,7 @@ class PostRepository {
     String mediaType = 'text',
     List<String> tags = const [],
     String? youtubeUrl,
+    void Function(int completed, int total)? onUploadProgress,
   }) async {
     final uid = SupabaseService.currentUserId;
     if (uid == null) throw Exception('Not authenticated');
@@ -30,44 +37,28 @@ class PostRepository {
     final List<String> mediaUrls = [];
 
     // 1. Upload media to Supabase storage
-    for (final file in mediaFiles) {
+    for (var i = 0; i < mediaFiles.length; i++) {
+      final file = mediaFiles[i];
       final ext = file.path.split('.').last.toLowerCase();
-      final fileName = '${uid}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-      final bytes = await file.readAsBytes();
-      final contentType = ext == 'mp4' || ext == 'mov' ? 'video/mp4' : 'image/jpeg';
+      final isVideo = ext == 'mp4' || ext == 'mov';
+      final fileName = '${uid}_${DateTime.now().millisecondsSinceEpoch}_$i.$ext';
+      final contentType = isVideo ? 'video/mp4' : 'image/jpeg';
 
-      // Try known bucket name variants in order
-      final bucketCandidates = ['post-media', 'post_media', 'posts', 'media'];
-      String? uploadedUrl;
+      // Compress images before upload — cuts upload size/time and data
+      // usage significantly on slower connections. Video compression is
+      // a heavier client-side operation left as a follow-up.
+      final uploadFile = isVideo ? file : await _compressImage(file);
+      final bytes = await uploadFile.readAsBytes();
 
-      for (final bucket in bucketCandidates) {
-        try {
-          await _db.storage.from(bucket).uploadBinary(
-                'posts/$fileName',
-                bytes,
-                fileOptions: FileOptions(
-                  contentType: contentType,
-                  upsert: true,
-                ),
-              );
-          uploadedUrl = _db.storage.from(bucket).getPublicUrl('posts/$fileName');
-          break; // success — stop trying
-        } catch (e) {
-          if (e.toString().contains('Bucket not found') ||
-              e.toString().contains('404')) {
-            continue; // try next bucket name
-          }
-          rethrow; // different error — surface it
-        }
-      }
-
-      if (uploadedUrl == null) {
-        throw Exception(
-          'Storage bucket not found. Please create a bucket named "post-media" '
-          'in your Supabase project under Storage.',
-        );
-      }
-      mediaUrls.add(uploadedUrl);
+      await _db.storage.from(AppConstants.bucketPostMedia).uploadBinary(
+            'posts/$fileName',
+            bytes,
+            fileOptions: FileOptions(contentType: contentType, upsert: true),
+          );
+      mediaUrls.add(
+        _db.storage.from(AppConstants.bucketPostMedia).getPublicUrl('posts/$fileName'),
+      );
+      onUploadProgress?.call(i + 1, mediaFiles.length);
     }
 
     // 2. Insert the post row — strip unknown columns automatically
@@ -104,6 +95,26 @@ class PostRepository {
     }
 
     return row['id'] as String? ?? '';
+  }
+
+  /// Compresses an image before upload. Falls back to the original file
+  /// if compression fails for any reason — this should never block a post.
+  Future<File> _compressImage(File file) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final targetPath =
+          '${dir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final result = await FlutterImageCompress.compressAndGetFile(
+        file.path,
+        targetPath,
+        quality: 80,
+        minWidth: 1440,
+        minHeight: 1440,
+      );
+      return result != null ? File(result.path) : file;
+    } catch (_) {
+      return file;
+    }
   }
 
   // ── Fetch single post ──────────────────────────────────────

@@ -85,9 +85,7 @@ class NotificationsRepository {
         .eq('id', notificationId);
   }
 
-  // ── Insert (used by server-side triggers / Edge Functions) ─────
-  // This is here for completeness; actual inserts happen via
-  // Supabase DB triggers or Edge Functions on the backend.
+  // ── Create ────────────────────────────────────────────────────
 
   Future<void> createNotification({
     required String userId,
@@ -97,6 +95,8 @@ class NotificationsRepository {
     String? actorId,
     Map<String, dynamic> data = const {},
   }) async {
+    if (!await _isCategoryEnabled(userId, type)) return;
+
     await _client.from('notifications').insert({
       'user_id': userId,
       'type': _typeString(type),
@@ -106,6 +106,75 @@ class NotificationsRepository {
       'data': data,
       'is_read': false,
     });
+  }
+
+  // ── Preferences ───────────────────────────────────────────────
+
+  static const _categories = ['likes', 'comments', 'follows', 'messages', 'events', 'communities'];
+
+  /// A missing row (user never visited notification settings) means
+  /// every category is on — matches the columns' own defaults.
+  Future<Map<String, bool>> fetchPreferences() async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return {for (final c in _categories) c: true};
+
+    final row = await _client
+        .from('notification_preferences')
+        .select()
+        .eq('user_id', uid)
+        .maybeSingle();
+
+    if (row == null) return {for (final c in _categories) c: true};
+    return {for (final c in _categories) c: (row[c] as bool?) ?? true};
+  }
+
+  Future<void> setPreference(String category, bool enabled) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return;
+    await _client.from('notification_preferences').upsert({
+      'user_id': uid,
+      category: enabled,
+    });
+  }
+
+  Future<bool> _isCategoryEnabled(String userId, NotificationType type) async {
+    final category = _categoryFor(type);
+    if (category == null) return true; // ungated types (general, etc.) always send
+
+    try {
+      final row = await _client
+          .from('notification_preferences')
+          .select(category)
+          .eq('user_id', userId)
+          .maybeSingle();
+      if (row == null) return true;
+      return (row[category] as bool?) ?? true;
+    } catch (_) {
+      return true; // never let a preferences lookup failure swallow a notification
+    }
+  }
+
+  static String? _categoryFor(NotificationType t) {
+    switch (t) {
+      case NotificationType.postLike:
+      case NotificationType.commentLike:
+        return 'likes';
+      case NotificationType.postComment:
+        return 'comments';
+      case NotificationType.follow:
+      case NotificationType.followRequest:
+        return 'follows';
+      case NotificationType.message:
+      case NotificationType.missedCall:
+        return 'messages';
+      case NotificationType.eventRsvp:
+        return 'events';
+      case NotificationType.communityJoin:
+        return 'communities';
+      case NotificationType.prayerRequest:
+      case NotificationType.general:
+        return null;
+    }
   }
 
   static String _typeString(NotificationType t) {

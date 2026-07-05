@@ -9,6 +9,7 @@ import '../../auth/presentation/providers/auth_provider.dart';
 import 'account_privacy_screen.dart';
 import 'blocked_accounts_screen.dart';
 import 'help_center_screen.dart';
+import 'notification_preferences_screen.dart';
 import 'privacy_policy_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -112,7 +113,9 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.notifications_outlined,
             title: 'Push Notifications',
-            onTap: () => _showComingSoon(context),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const NotificationPreferencesScreen()),
+            ),
           ),
 
           const SizedBox(height: 8),

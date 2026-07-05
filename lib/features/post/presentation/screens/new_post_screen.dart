@@ -12,6 +12,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../data/draft_repository.dart';
 import '../providers/new_post_provider.dart';
 
 // ── Step enum ─────────────────────────────────────────────────────
@@ -37,12 +38,60 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
   final _locationCtrl = TextEditingController();
   String _audioLabel = 'Original Audio';
   bool _aiLabel = false;
+  bool _hasDraft = false;
+
+  @override
+  void initState() {
+    super.initState();
+    DraftRepository.instance.hasDraft().then((v) {
+      if (mounted) setState(() => _hasDraft = v);
+    });
+  }
 
   @override
   void dispose() {
     _captionCtrl.dispose();
     _locationCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadDraft() async {
+    final draft = await DraftRepository.instance.loadDraft();
+    if (draft == null || !mounted) return;
+
+    final paths = ((draft['media_file_paths'] as List?) ?? []).cast<String>();
+    File? file;
+    Uint8List? thumb;
+    if (paths.isNotEmpty) {
+      file = File(paths.first);
+      if (draft['media_type'] != 'video') {
+        try {
+          thumb = await file.readAsBytes();
+        } catch (_) {}
+      }
+    }
+    if (!mounted) return;
+
+    ref.read(newPostProvider.notifier).loadFromDraft(draft);
+    _captionCtrl.text = draft['caption'] as String? ?? '';
+
+    setState(() {
+      _selectedFile = file;
+      _thumbnailBytes = thumb;
+      _step = _Step.share;
+    });
+  }
+
+  Future<void> _saveDraft() async {
+    final state = ref.read(newPostProvider);
+    await DraftRepository.instance.saveDraft(
+      caption: state.caption,
+      hubType: state.hubType,
+      mediaFilePaths: state.mediaFiles.map((f) => f.path).toList(),
+      mediaType: state.mediaType,
+      tags: state.tags,
+      youtubeUrl: state.youtubeUrl,
+    );
   }
 
   Future<void> _onAssetSelected(AssetEntity asset) async {
@@ -68,6 +117,8 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
     if (!mounted) return;
     if (state.status == NewPostStatus.success) {
       ref.read(newPostProvider.notifier).reset();
+      await DraftRepository.instance.clearDraft();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Post shared!'),
@@ -97,6 +148,8 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
         _Step.picker => _GalleryPickerStep(
             onSelected: _onAssetSelected,
             onClose: () => context.pop(),
+            hasDraft: _hasDraft,
+            onLoadDraft: _loadDraft,
           ),
         _Step.edit => _EditStep(
             asset: _selectedAsset,
@@ -125,6 +178,7 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
             onAudioLabelChanged: (v) => setState(() => _audioLabel = v),
             onBack: () => setState(() => _step = _Step.edit),
             onSubmit: _submit,
+            onSaveDraft: _saveDraft,
           ),
       },
     );
@@ -139,9 +193,13 @@ class _GalleryPickerStep extends StatefulWidget {
   const _GalleryPickerStep({
     required this.onSelected,
     required this.onClose,
+    required this.hasDraft,
+    required this.onLoadDraft,
   });
   final Future<void> Function(AssetEntity) onSelected;
   final VoidCallback onClose;
+  final bool hasDraft;
+  final VoidCallback onLoadDraft;
 
   @override
   State<_GalleryPickerStep> createState() => _GalleryPickerStepState();
@@ -287,13 +345,18 @@ class _GalleryPickerStepState extends State<_GalleryPickerStep>
                 ),
               ),
               // Drafts / Templates chips
-              const Padding(
-                padding: EdgeInsets.fromLTRB(14, 8, 14, 4),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
                 child: Row(
                   children: [
-                    _Chip(label: 'Drafts · 1', icon: Icons.layers_outlined),
-                    SizedBox(width: 10),
-                    _Chip(label: 'Templates', icon: Icons.auto_awesome_mosaic_outlined),
+                    _Chip(
+                      label: widget.hasDraft ? 'Drafts · 1' : 'Drafts · 0',
+                      icon: Icons.layers_outlined,
+                      onTap: widget.hasDraft ? widget.onLoadDraft : null,
+                    ),
+                    const SizedBox(width: 10),
+                    const _Chip(
+                        label: 'Templates', icon: Icons.auto_awesome_mosaic_outlined),
                   ],
                 ),
               ),
@@ -439,13 +502,16 @@ class _GalleryPickerStepState extends State<_GalleryPickerStep>
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({required this.label, required this.icon});
+  const _Chip({required this.label, required this.icon, this.onTap});
   final String label;
   final IconData icon;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A2A),
@@ -459,6 +525,7 @@ class _Chip extends StatelessWidget {
           Text(label,
               style: const TextStyle(color: Colors.white70, fontSize: 13)),
         ],
+      ),
       ),
     );
   }
@@ -1711,6 +1778,7 @@ class _ShareStep extends ConsumerWidget {
     required this.onAudioLabelChanged,
     required this.onBack,
     required this.onSubmit,
+    required this.onSaveDraft,
   });
   final Uint8List? thumbnailBytes;
   final File? file;
@@ -1723,6 +1791,7 @@ class _ShareStep extends ConsumerWidget {
   final ValueChanged<String> onAudioLabelChanged;
   final VoidCallback onBack;
   final VoidCallback onSubmit;
+  final Future<void> Function() onSaveDraft;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -2053,29 +2122,38 @@ class _ShareStep extends ConsumerWidget {
   }
 
   Future<void> _confirmDiscard(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
+    final choice = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Discard this post?',
+        title: const Text('Leave this post?',
             style: TextStyle(color: Colors.white)),
         content: const Text(
-          'There is no draft saving yet — closing now will lose your caption and edits.',
+          'Save it as a draft to finish later, or discard it.',
           style: TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(context, 'cancel'),
             child: const Text('Keep editing'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(context, 'save'),
+            child: const Text('Save draft'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'discard'),
             child: const Text('Discard', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
-    if (confirmed == true && context.mounted) context.pop();
+    if (choice == 'save') {
+      await onSaveDraft();
+    }
+    if ((choice == 'save' || choice == 'discard') && context.mounted) {
+      context.pop();
+    }
   }
 }
 

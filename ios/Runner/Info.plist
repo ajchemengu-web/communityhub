@@ -6,6 +6,10 @@
 	<string>CommunityHub needs camera access to record videos and go live.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>CommunityHub needs microphone access to record audio and go live.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>CommunityHub needs photo library access to compress and share your videos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>CommunityHub needs photo library access to save compressed videos.</string>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-3940256099942544~1458002511</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>

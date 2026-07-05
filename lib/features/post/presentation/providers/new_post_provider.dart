@@ -83,6 +83,19 @@ class NewPostNotifier extends StateNotifier<NewPostState> {
   void setTextOnly() => state = state.copyWith(mediaFiles: [], mediaType: 'text');
   void setYoutubeUrl(String? url) => state = state.copyWith(youtubeUrl: url);
 
+  void loadFromDraft(Map<String, dynamic> draft) {
+    state = state.copyWith(
+      caption: draft['caption'] as String? ?? '',
+      hubType: draft['hub_type'] as String? ?? AppConstants.hubAll,
+      mediaFiles: ((draft['media_file_paths'] as List?) ?? [])
+          .map((p) => File(p as String))
+          .toList(),
+      mediaType: draft['media_type'] as String? ?? 'text',
+      tags: ((draft['tags'] as List?) ?? []).cast<String>(),
+      youtubeUrl: draft['youtube_url'] as String?,
+    );
+  }
+
   void addMedia(List<File> files, String type) {
     final current = List<File>.from(state.mediaFiles);
     current.addAll(files);

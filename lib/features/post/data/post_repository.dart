@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:v_video_compressor/v_video_compressor.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/supabase_service.dart';
@@ -44,10 +45,9 @@ class PostRepository {
       final fileName = '${uid}_${DateTime.now().millisecondsSinceEpoch}_$i.$ext';
       final contentType = isVideo ? 'video/mp4' : 'image/jpeg';
 
-      // Compress images before upload — cuts upload size/time and data
-      // usage significantly on slower connections. Video compression is
-      // a heavier client-side operation left as a follow-up.
-      final uploadFile = isVideo ? file : await _compressImage(file);
+      // Compress before upload — cuts upload size/time and data usage
+      // significantly on slower connections.
+      final uploadFile = isVideo ? await _compressVideo(file) : await _compressImage(file);
       final bytes = await uploadFile.readAsBytes();
 
       await _db.storage.from(AppConstants.bucketPostMedia).uploadBinary(
@@ -111,6 +111,20 @@ class PostRepository {
         minHeight: 1440,
       );
       return result != null ? File(result.path) : file;
+    } catch (_) {
+      return file;
+    }
+  }
+
+  /// Compresses a video before upload. Falls back to the original file
+  /// if compression fails for any reason — this should never block a post.
+  Future<File> _compressVideo(File file) async {
+    try {
+      final result = await VVideoCompressor().compressVideo(
+        file.path,
+        const VVideoCompressionConfig.medium(),
+      );
+      return result != null ? File(result.compressedFilePath) : file;
     } catch (_) {
       return file;
     }

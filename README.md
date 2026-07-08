@@ -1,6 +1,6 @@
 # communityhub
 
-A new Flutter project.
+This is a cross platform mobile application where users can utilize the free educational contents disposed on YouTube and also within the app by the creators.All this to happen within a holistic environment of faith filtering all the unfit and distracting content.
 
 ## Getting Started
 

@@ -104,6 +104,39 @@ class FeedRepository {
     return _enrichAndMapRows(rows, uid);
   }
 
+  /// Fetches a page of user-generated reels (posts flagged `is_reel`) for
+  /// the Reels feed, same shape/pagination as [fetchPosts].
+  Future<FeedPage> fetchUserReels({
+    DateTime? cursor,
+    int limit = 10,
+  }) async {
+    final uid = SupabaseService.currentUserId;
+    final excludedIds = await BlockService.instance.fetchExcludedUserIds();
+
+    var query = _db
+        .from('posts')
+        .select(
+            '*, users!posts_author_id_fkey(username, full_name, avatar_url, is_verified)')
+        .eq('is_reel', true);
+
+    if (excludedIds.isNotEmpty) {
+      query = query.not('author_id', 'in', excludedIds);
+    }
+    if (cursor != null) {
+      query = query.lt('created_at', cursor.toIso8601String());
+    }
+
+    final rows = await query
+        .order('created_at', ascending: false)
+        .limit(limit + 1) as List<dynamic>;
+
+    final hasMore = rows.length > limit;
+    final pageRows = hasMore ? rows.sublist(0, limit) : rows;
+    final reels = await _enrichAndMapRows(pageRows, uid);
+
+    return FeedPage(posts: reels, hasMore: hasMore);
+  }
+
   /// Attaches liked/bookmarked flags for the current user and maps rows
   /// to [PostModel]s. Shared by [fetchPosts] and [fetchPostsByIds].
   Future<List<PostModel>> _enrichAndMapRows(
@@ -224,7 +257,11 @@ class FeedRepository {
 
   // ── Stories ───────────────────────────────────────────────
 
-  /// Stories from people the current user follows (or all recent if no follows).
+  /// Stories from people the current user follows — matches WhatsApp's
+  /// "contacts only" Updates list rather than showing every public
+  /// account's story. RLS separately enforces privacy/blocking/audience
+  /// restriction; this scoping is about *whose* updates surface here at
+  /// all, not a security boundary by itself.
   Future<List<StoryModel>> fetchStories() async {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return [];
@@ -232,22 +269,107 @@ class FeedRepository {
     try {
       final excludedIds = await BlockService.instance.fetchExcludedUserIds();
 
-      // Fetch stories that haven't expired, from users other than self
+      final followRows = await _db
+          .from('follows')
+          .select('following_id')
+          .eq('follower_id', uid)
+          .eq('status', 'accepted') as List<dynamic>;
+      final followingIds =
+          followRows.map((r) => r['following_id'] as String).toList();
+      if (followingIds.isEmpty) return [];
+
       var query = _db
           .from('stories')
           .select('*, users(username, avatar_url, is_verified)')
           .gt('expires_at', DateTime.now().toIso8601String())
-          .neq('user_id', uid);
+          .inFilter('user_id', followingIds);
       if (excludedIds.isNotEmpty) {
         query = query.not('user_id', 'in', excludedIds);
       }
       final rows = await query
           .order('created_at', ascending: false)
-          .limit(30) as List<dynamic>;
+          .limit(100) as List<dynamic>;
 
+      return _attachSeenStatus(rows, uid);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Populates `isSeen` from `story_views` — the raw row data never has
+  /// this (no join in the query above), so without this every story
+  /// always looked unviewed regardless of actual view history.
+  Future<List<StoryModel>> _attachSeenStatus(
+      List<dynamic> rows, String uid) async {
+    Set<String> seenIds = {};
+    if (rows.isNotEmpty) {
+      try {
+        final storyIds = rows.map((r) => r['id'] as String).toList();
+        final views = await _db
+            .from('story_views')
+            .select('story_id')
+            .eq('user_id', uid)
+            .inFilter('story_id', storyIds) as List<dynamic>;
+        seenIds = views.map((r) => r['story_id'] as String).toSet();
+      } catch (_) {}
+    }
+    return rows.map((r) {
+      final map = Map<String, dynamic>.from(r as Map);
+      map['is_seen'] = seenIds.contains(map['id']);
+      return StoryModel.fromMap(map);
+    }).toList();
+  }
+
+  /// The ids of users whose updates the current user has muted — their
+  /// stories still show, just deprioritized into their own section.
+  Future<Set<String>> fetchMutedUserIds() async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return {};
+    try {
+      final rows = await _db
+          .from('story_mutes')
+          .select('muted_id')
+          .eq('muter_id', uid) as List<dynamic>;
+      return rows.map((r) => r['muted_id'] as String).toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> muteStoryUser(String userId) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return;
+    try {
+      await _db.from('story_mutes').upsert({
+        'muter_id': uid,
+        'muted_id': userId,
+      });
+    } catch (_) {}
+  }
+
+  Future<void> unmuteStoryUser(String userId) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return;
+    try {
+      await _db
+          .from('story_mutes')
+          .delete()
+          .eq('muter_id', uid)
+          .eq('muted_id', userId);
+    } catch (_) {}
+  }
+
+  /// Who has viewed one of the current user's own stories — the
+  /// "seen by" list shown on your active status.
+  Future<List<Map<String, dynamic>>> fetchStoryViewers(String storyId) async {
+    try {
+      final rows = await _db
+          .from('story_views')
+          .select('viewed_at, users(id, username, full_name, avatar_url)')
+          .eq('story_id', storyId)
+          .order('viewed_at', ascending: false) as List<dynamic>;
       return rows
-          .map((r) =>
-              StoryModel.fromMap(Map<String, dynamic>.from(r as Map)))
+          .map((r) => Map<String, dynamic>.from(r as Map))
           .toList();
     } catch (_) {
       return [];
@@ -273,6 +395,30 @@ class FeedRepository {
       return StoryModel.fromMap(Map<String, dynamic>.from(row));
     } catch (_) {
       return null;
+    }
+  }
+
+  /// All of the current user's own active stories, oldest first, for
+  /// viewing them back-to-back — [fetchMyStory] only ever returns the
+  /// single latest one, which meant a second/third story of the day was
+  /// never actually viewable.
+  Future<List<StoryModel>> fetchMyStories() async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return [];
+
+    try {
+      final rows = await _db
+          .from('stories')
+          .select('*, users(username, avatar_url, is_verified)')
+          .eq('user_id', uid)
+          .gt('expires_at', DateTime.now().toIso8601String())
+          .order('created_at', ascending: true) as List<dynamic>;
+
+      return rows
+          .map((r) => StoryModel.fromMap(Map<String, dynamic>.from(r as Map)))
+          .toList();
+    } catch (_) {
+      return [];
     }
   }
 

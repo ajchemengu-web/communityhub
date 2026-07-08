@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:v_video_compressor/v_video_compressor.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/block_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/models/comment_model.dart';
 
@@ -30,6 +31,12 @@ class PostRepository {
     String mediaType = 'text',
     List<String> tags = const [],
     String? youtubeUrl,
+    bool isAiGenerated = false,
+    bool isReel = false,
+    List<String> taggedUserIds = const [],
+    String? audioTitle,
+    String? audioArtist,
+    String? audioPreviewUrl,
     void Function(int completed, int total)? onUploadProgress,
   }) async {
     final uid = SupabaseService.currentUserId;
@@ -72,10 +79,16 @@ class PostRepository {
       'tags': tags,
       'youtube_url': youtubeUrl,
       'moderation_status': 'approved',
+      'is_ai_generated': isAiGenerated,
+      'is_reel': isReel,
+      'audio_title': audioTitle,
+      'audio_artist': audioArtist,
+      'audio_preview_url': audioPreviewUrl,
     };
     final postOptional = [
       'hub_type', 'media_url', 'media_type', 'media_thumbnail',
-      'tags', 'youtube_url', 'moderation_status',
+      'tags', 'youtube_url', 'moderation_status', 'is_ai_generated',
+      'is_reel', 'audio_title', 'audio_artist', 'audio_preview_url',
     ];
     Map<String, dynamic> row;
     while (true) {
@@ -93,7 +106,57 @@ class PostRepository {
       }
     }
 
-    return row['id'] as String? ?? '';
+    final postId = row['id'] as String? ?? '';
+
+    // 3. Tag people — best-effort, never blocks the post itself.
+    if (postId.isNotEmpty && taggedUserIds.isNotEmpty) {
+      try {
+        await _db.from('post_tags').insert([
+          for (final taggedId in taggedUserIds)
+            {'post_id': postId, 'tagged_user_id': taggedId},
+        ]);
+      } catch (_) {}
+    }
+
+    return postId;
+  }
+
+  // ── Tagged people ──────────────────────────────────────────
+
+  /// Fetches the users tagged on a post (for display on the post card).
+  Future<List<Map<String, dynamic>>> fetchTaggedUsers(String postId) async {
+    try {
+      final rows = await _db
+          .from('post_tags')
+          .select('tagged_user_id, users(id, username, full_name, avatar_url)')
+          .eq('post_id', postId);
+      return (rows as List)
+          .map((r) => Map<String, dynamic>.from(r['users'] as Map))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Searches users by username/full name for the "Tag people" picker.
+  /// Excludes anyone in a block relationship with the current user, same
+  /// as every other user-search surface in the app.
+  Future<List<Map<String, dynamic>>> searchUsersForTagging(String query) async {
+    if (query.trim().isEmpty) return [];
+    try {
+      final excluded = await BlockService.instance.fetchExcludedUserIds();
+      var q = _db
+          .from('users')
+          .select('id, username, full_name, avatar_url')
+          .or('username.ilike.%$query%,full_name.ilike.%$query%');
+      if (excluded.isNotEmpty) {
+        q = q.not('id', 'in', excluded);
+      }
+      final rows = await q.limit(20);
+      return (rows as List).map((r) => Map<String, dynamic>.from(r)).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   /// Compresses an image before upload. Falls back to the original file

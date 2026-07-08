@@ -782,10 +782,7 @@ class _VideoResults extends StatelessWidget {
       itemBuilder: (ctx, i) {
         final v = videos[i];
         return GestureDetector(
-          onTap: () => context.push('/reels', extra: {
-            'videos': videos,
-            'index': i,
-          }),
+          onTap: () => context.push('/video/${v.id}', extra: v),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

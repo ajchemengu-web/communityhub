@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1037861382900",
+    "project_id": "communitydom-5f0c3",
+    "storage_bucket": "communitydom-5f0c3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1037861382900:android:29a1391ce0b935104a4ca1",
+        "android_client_info": {
+          "package_name": "com.example.communitydome"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATN42zy6dgV3knpdMGV67mG2zHtFY9sV0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

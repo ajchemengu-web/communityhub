@@ -22,6 +22,9 @@ class PostModel {
     this.tags = const [],
     this.youtubeUrl,
     this.isBookmarkedByCurrentUser = false,
+    this.audioTitle,
+    this.audioArtist,
+    this.audioPreviewUrl,
   });
 
   final String id;
@@ -41,6 +44,9 @@ class PostModel {
   final String? thumbnailUrl;
   final List<String> tags;
   final String? youtubeUrl;
+  final String? audioTitle;
+  final String? audioArtist;
+  final String? audioPreviewUrl;
 
   // ── Engagement ────────────────────────────────────────────
   final int likesCount;
@@ -59,6 +65,8 @@ class PostModel {
   bool get hasMedia => mediaUrls.isNotEmpty;
   bool get isMultiMedia => mediaUrls.length > 1;
   bool get isVideo => mediaType == 'video';
+  bool get hasAudioTrack =>
+      audioPreviewUrl != null && audioPreviewUrl!.isNotEmpty;
 
   // ── Factory ───────────────────────────────────────────────
 
@@ -90,6 +98,9 @@ class PostModel {
       thumbnailUrl: (map['media_thumbnail'] ?? map['thumbnail_url']) as String?,
       tags: (map['tags'] as List<dynamic>?)?.cast<String>() ?? [],
       youtubeUrl: map['youtube_url'] as String?,
+      audioTitle: map['audio_title'] as String?,
+      audioArtist: map['audio_artist'] as String?,
+      audioPreviewUrl: map['audio_preview_url'] as String?,
       likesCount: map['likes_count'] as int? ?? 0,
       commentsCount: map['comments_count'] as int? ?? 0,
       sharesCount: (map['saves_count'] ?? map['shares_count']) as int? ?? 0,
@@ -120,6 +131,9 @@ class PostModel {
       thumbnailUrl: thumbnailUrl,
       tags: tags,
       youtubeUrl: youtubeUrl,
+      audioTitle: audioTitle,
+      audioArtist: audioArtist,
+      audioPreviewUrl: audioPreviewUrl,
       likesCount: likesCount ?? this.likesCount,
       commentsCount: commentsCount ?? this.commentsCount,
       sharesCount: sharesCount,

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:video_player/video_player.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../../../../core/constants/app_constants.dart';
@@ -13,7 +14,12 @@ import '../../../../core/services/supabase_service.dart';
 import '../../../../core/services/youtube_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../ads/presentation/widgets/reel_ad_overlay.dart';
+import '../../../home/data/feed_repository.dart';
+import '../../../home/domain/models/post_model.dart';
+import '../../../post/data/post_repository.dart';
+import '../../../post/domain/models/comment_model.dart';
 import '../../data/reels_feed_provider.dart';
+import '../../data/user_reels_feed_provider.dart';
 
 // ─── YouTube OAuth ────────────────────────────────────────────────
 
@@ -91,13 +97,18 @@ Future<void> _ytComment(String videoId, String text) async {
 // Reels Screen
 // ─────────────────────────────────────────────────────────────────
 
-/// A slot in the reels PageView — either a real video or an ad slide.
+/// A slot in the reels PageView — a YouTube video, a user-uploaded reel
+/// (a post flagged `is_reel`), or an ad slide.
 class _ReelFeedEntry {
-  const _ReelFeedEntry._(this.video, this.isAd);
+  const _ReelFeedEntry._(this.video, this.userReel, this.isAd);
   final YouTubeVideo? video;
+  final PostModel? userReel;
   final bool isAd;
-  factory _ReelFeedEntry.video(YouTubeVideo v) => _ReelFeedEntry._(v, false);
-  factory _ReelFeedEntry.ad() => const _ReelFeedEntry._(null, true);
+  factory _ReelFeedEntry.video(YouTubeVideo v) =>
+      _ReelFeedEntry._(v, null, false);
+  factory _ReelFeedEntry.userReel(PostModel p) =>
+      _ReelFeedEntry._(null, p, false);
+  factory _ReelFeedEntry.ad() => const _ReelFeedEntry._(null, null, true);
 }
 
 class ReelsScreen extends ConsumerStatefulWidget {
@@ -151,9 +162,12 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
   @override
   Widget build(BuildContext context) {
     if (widget.initialVideos != null) {
-      return _buildReels(widget.initialVideos!);
+      return _buildReels(widget.initialVideos!, const []);
     }
     final feedAsync = ref.watch(reelsFeedProvider);
+    // Best-effort: user reels ride along whenever they're ready, but
+    // never gate the (already-working) YouTube side of the feed on them.
+    final userReels = ref.watch(userReelsFeedProvider).valueOrNull ?? const [];
     return feedAsync.when(
       loading: () => const Scaffold(
         backgroundColor: Colors.black,
@@ -166,18 +180,32 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
             child: Text('Could not load reels',
                 style: TextStyle(color: Colors.white))),
       ),
-      data: _buildReels,
+      data: (videos) => _buildReels(videos, userReels),
     );
   }
 
-  /// Inserts an ad slide every [AppConstants.adFrequency] videos.
-  List<_ReelFeedEntry> _interleaveAds(List<YouTubeVideo> videos) {
+  /// Merges YouTube videos with user-uploaded reels (one user reel every
+  /// [_userReelFrequency] YouTube videos, cycling as more are loaded) and
+  /// inserts an ad slide every [AppConstants.adFrequency] videos.
+  static const _userReelFrequency = 4;
+
+  List<_ReelFeedEntry> _mergeFeedEntries(
+      List<YouTubeVideo> videos, List<PostModel> userReels) {
     final result = <_ReelFeedEntry>[];
+    int reelIndex = 0;
     for (int i = 0; i < videos.length; i++) {
       result.add(_ReelFeedEntry.video(videos[i]));
+      if ((i + 1) % _userReelFrequency == 0 && reelIndex < userReels.length) {
+        result.add(_ReelFeedEntry.userReel(userReels[reelIndex++]));
+      }
       if ((i + 1) % AppConstants.adFrequency == 0) {
         result.add(_ReelFeedEntry.ad());
       }
+    }
+    // Any user reels that didn't fit the interleave cadence still show up,
+    // appended at the end, rather than being silently dropped.
+    while (reelIndex < userReels.length) {
+      result.add(_ReelFeedEntry.userReel(userReels[reelIndex++]));
     }
     return result;
   }
@@ -200,8 +228,8 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
     );
   }
 
-  Widget _buildReels(List<YouTubeVideo> videos) {
-    if (videos.isEmpty) {
+  Widget _buildReels(List<YouTubeVideo> videos, List<PostModel> userReels) {
+    if (videos.isEmpty && userReels.isEmpty) {
       return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(
@@ -210,7 +238,7 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
       );
     }
 
-    final items = _interleaveAds(videos);
+    final items = _mergeFeedEntries(videos, userReels);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -223,7 +251,24 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
             controller: _pageCtrl,
             scrollDirection: Axis.vertical,
             physics: const NeverScrollableScrollPhysics(),
-            onPageChanged: (i) => setState(() => _currentIndex = i),
+            // Builds (and starts loading) the reel immediately before/after
+            // the current one, so its WebView + video buffer are already
+            // warm by the time the user swipes to it, instead of cold-
+            // starting on every swipe.
+            allowImplicitScrolling: true,
+            onPageChanged: (i) {
+              setState(() => _currentIndex = i);
+              // Fetch the next page once the user is within 3 reels of
+              // the end of what's currently loaded — keeps the feed
+              // effectively endless instead of hitting a hard wall.
+              // Only applies to the provider-backed feed; a screen opened
+              // with a fixed `initialVideos` list has nothing to page.
+              if (widget.initialVideos == null &&
+                  i >= items.length - 3) {
+                ref.read(reelsFeedProvider.notifier).loadMore();
+                ref.read(userReelsFeedProvider.notifier).loadMore();
+              }
+            },
             itemCount: items.length,
             itemBuilder: (context, i) {
               final item = items[i];
@@ -232,6 +277,15 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
                   onSwipeUp: () => _goNext(items.length),
                   onSwipeDown: _goPrev,
                   child: const ReelAdOverlay(),
+                );
+              }
+              if (item.userReel != null) {
+                return _UserReelItem(
+                  key: ValueKey('reel_${item.userReel!.id}'),
+                  post: item.userReel!,
+                  isActive: i == _currentIndex,
+                  onSwipeUp: () => _goNext(items.length),
+                  onSwipeDown: _goPrev,
                 );
               }
               return _ReelItem(
@@ -311,8 +365,11 @@ class _ReelItemState extends State<_ReelItem>
     _likeCount = widget.video.likeCount ?? 0;
     _ctrl = YoutubePlayerController.fromVideoId(
       videoId: widget.video.id,
-      // Always autoplay — muted autoplay is allowed by browser policy.
-      autoPlay: true,
+      // Only autoplay if this reel is already active. Neighboring reels
+      // get built early (see PageView.allowImplicitScrolling above) purely
+      // to warm up their WebView/video buffer — they shouldn't actually
+      // start playing until the user swipes to them.
+      autoPlay: false,
       params: const YoutubePlayerParams(
         showControls: false,
         showFullscreenButton: false,
@@ -323,6 +380,7 @@ class _ReelItemState extends State<_ReelItem>
         showVideoAnnotations: false,
       ),
     );
+    if (widget.isActive) _ctrl.playVideo();
     _loadSavedState();
   }
 
@@ -517,6 +575,473 @@ class _ReelItemState extends State<_ReelItem>
             ],
           ),
 
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// User Reel Item — a real uploaded post (is_reel = true), rendered
+// natively via video_player (no WebView, no YouTube API calls). Actions
+// are wired to the real posts/likes/comments/bookmarks tables, unlike
+// the YouTube reels above whose actions call YouTube's own API.
+// ─────────────────────────────────────────────────────────────────
+
+class _UserReelItem extends StatefulWidget {
+  const _UserReelItem({
+    super.key,
+    required this.post,
+    required this.isActive,
+    required this.onSwipeUp,
+    required this.onSwipeDown,
+  });
+
+  final PostModel post;
+  final bool isActive;
+  final VoidCallback onSwipeUp;
+  final VoidCallback onSwipeDown;
+
+  @override
+  State<_UserReelItem> createState() => _UserReelItemState();
+}
+
+class _UserReelItemState extends State<_UserReelItem>
+    with AutomaticKeepAliveClientMixin {
+  VideoPlayerController? _ctrl;
+  bool _liked = false;
+  bool _saved = false;
+  int _likeCount = 0;
+  bool _paused = false;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _liked = widget.post.isLikedByCurrentUser;
+    _saved = widget.post.isBookmarkedByCurrentUser;
+    _likeCount = widget.post.likesCount;
+    if (widget.post.mediaUrls.isNotEmpty) {
+      _ctrl = VideoPlayerController.networkUrl(
+        Uri.parse(widget.post.mediaUrls.first),
+      )..initialize().then((_) {
+          if (!mounted) return;
+          _ctrl!.setLooping(true);
+          if (widget.isActive) _ctrl!.play();
+          setState(() {});
+        });
+    }
+  }
+
+  @override
+  void didUpdateWidget(_UserReelItem old) {
+    super.didUpdateWidget(old);
+    if (widget.isActive && !old.isActive) {
+      _ctrl?.play();
+      setState(() => _paused = false);
+    } else if (!widget.isActive && old.isActive) {
+      _ctrl?.pause();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl?.dispose();
+    super.dispose();
+  }
+
+  void _togglePlayPause() {
+    if (_ctrl == null) return;
+    if (_paused) {
+      _ctrl!.play();
+    } else {
+      _ctrl!.pause();
+    }
+    setState(() => _paused = !_paused);
+  }
+
+  Future<void> _toggleLike() async {
+    final wasLiked = _liked;
+    setState(() {
+      _liked = !_liked;
+      _likeCount += _liked ? 1 : -1;
+    });
+    final newCount = await FeedRepository.instance
+        .toggleLike(widget.post.id, isCurrentlyLiked: wasLiked);
+    if (!mounted) return;
+    if (newCount != null) {
+      setState(() => _likeCount = newCount);
+    } else {
+      setState(() {
+        _liked = wasLiked;
+        _likeCount = widget.post.likesCount;
+      });
+    }
+  }
+
+  Future<void> _toggleSave() async {
+    final was = _saved;
+    setState(() => _saved = !_saved);
+    final result = await FeedRepository.instance
+        .toggleBookmark(widget.post.id, isCurrentlyBookmarked: was);
+    if (mounted) setState(() => _saved = result);
+  }
+
+  void _share() => Share.share(
+        'Check out this reel on CommunityHub: ${widget.post.caption}',
+      );
+
+  void _showComments() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF111111),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => _UserReelCommentsSheet(postId: widget.post.id),
+    );
+  }
+
+  Widget _swipeZone({required Widget child}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragEnd: (d) {
+        final v = d.primaryVelocity ?? 0;
+        if (v < -300) widget.onSwipeUp();
+        if (v > 300) widget.onSwipeDown();
+      },
+      child: child,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final ready = _ctrl?.value.isInitialized ?? false;
+
+    return Container(
+      color: Colors.black,
+      child: Stack(
+        children: [
+          // Full-screen video, tap to pause/play
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _togglePlayPause,
+            child: SizedBox(
+              width: screenWidth,
+              height: screenHeight,
+              child: ready
+                  ? FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: _ctrl!.value.size.width,
+                        height: _ctrl!.value.size.height,
+                        child: VideoPlayer(_ctrl!),
+                      ),
+                    )
+                  : const Center(
+                      child: CircularProgressIndicator(
+                          color: AppColors.primary)),
+            ),
+          ),
+          if (ready && _paused)
+            const Center(
+              child: Icon(Icons.play_arrow_rounded,
+                  color: Colors.white70, size: 64),
+            ),
+
+          // Top swipe zone
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 140,
+            child: _swipeZone(
+              child: Container(
+                padding: EdgeInsets.only(
+                    top: MediaQuery.of(context).padding.top + 12,
+                    left: 16,
+                    right: 16),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xCC000000), Colors.transparent],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: const Color(0xFF2A2A2A),
+                      backgroundImage: (widget.post.avatarUrl != null &&
+                              widget.post.avatarUrl!.isNotEmpty)
+                          ? NetworkImage(widget.post.avatarUrl!)
+                          : null,
+                      child: (widget.post.avatarUrl == null ||
+                              widget.post.avatarUrl!.isEmpty)
+                          ? const Icon(Icons.person,
+                              color: Colors.white38, size: 16)
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(widget.post.usernameDisplay,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Bottom zone — caption + actions
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: _swipeZone(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 40, 16, 24),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [Color(0xCC000000), Colors.transparent],
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.post.caption,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 14, height: 1.4),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _SideBtn(
+                          icon: _liked
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          label: '$_likeCount',
+                          color: _liked ? Colors.red : Colors.white,
+                          onTap: _toggleLike,
+                        ),
+                        const SizedBox(height: 22),
+                        _SideBtn(
+                          icon: Icons.comment_outlined,
+                          label: '${widget.post.commentsCount}',
+                          color: Colors.white,
+                          onTap: _showComments,
+                        ),
+                        const SizedBox(height: 22),
+                        _SideBtn(
+                          icon: Icons.reply_rounded,
+                          label: 'Share',
+                          color: Colors.white,
+                          onTap: _share,
+                        ),
+                        const SizedBox(height: 22),
+                        _SideBtn(
+                          icon: _saved
+                              ? Icons.bookmark_rounded
+                              : Icons.bookmark_outline_rounded,
+                          label: 'Save',
+                          color: _saved ? AppColors.secondary : Colors.white,
+                          onTap: _toggleSave,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UserReelCommentsSheet extends StatefulWidget {
+  const _UserReelCommentsSheet({required this.postId});
+  final String postId;
+
+  @override
+  State<_UserReelCommentsSheet> createState() =>
+      _UserReelCommentsSheetState();
+}
+
+class _UserReelCommentsSheetState extends State<_UserReelCommentsSheet> {
+  final _ctrl = TextEditingController();
+  bool _posting = false;
+  bool _loading = true;
+  List<CommentModel> _comments = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final comments = await PostRepository.instance.fetchComments(widget.postId);
+      if (mounted) setState(() { _comments = comments; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _post() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _posting = true);
+    try {
+      final comment = await PostRepository.instance
+          .addComment(postId: widget.postId, content: text);
+      if (mounted) setState(() => _comments.insert(0, comment));
+    } catch (_) {}
+    _ctrl.clear();
+    if (mounted) setState(() => _posting = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      maxChildSize: 0.92,
+      minChildSize: 0.35,
+      builder: (_, scrollCtrl) => Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 6),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2)),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Text('Comments',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700)),
+          ),
+          const Divider(color: Colors.white12),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _comments.isEmpty
+                    ? const Center(
+                        child: Text('Be the first to comment!',
+                            style: TextStyle(
+                                color: Colors.white38, fontSize: 13)),
+                      )
+                    : ListView.builder(
+                        controller: scrollCtrl,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        itemCount: _comments.length,
+                        itemBuilder: (_, i) {
+                          final c = _comments[i];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor: AppColors.primary,
+                                  child: Icon(Icons.person,
+                                      color: Colors.white, size: 16),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(c.username ?? '',
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12)),
+                                      const SizedBox(height: 2),
+                                      Text(c.content,
+                                          style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+          Container(
+            color: const Color(0xFF0A0A0A),
+            padding: EdgeInsets.fromLTRB(
+                12, 8, 12, MediaQuery.of(context).viewInsets.bottom + 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Add a comment…',
+                      hintStyle:
+                          const TextStyle(color: Colors.white38, fontSize: 13),
+                      filled: true,
+                      fillColor: Colors.white10,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                    ),
+                    onSubmitted: (_) => _post(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _posting
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.primary))
+                    : GestureDetector(
+                        onTap: _post,
+                        child: const Icon(Icons.send_rounded,
+                            color: AppColors.primary, size: 26),
+                      ),
+              ],
+            ),
+          ),
         ],
       ),
     );

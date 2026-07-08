@@ -311,6 +311,20 @@ class ProfileDetailRepository {
     } catch (_) {}
   }
 
+  /// The current user's own accepted followers — used by the story
+  /// audience picker ("All Followers Except…" / "Only Share With…").
+  Future<List<Map<String, dynamic>>> fetchMyFollowers() async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return [];
+    final rows = await _db
+        .from('follows')
+        .select('follower_id, follower:users!follower_id(id, username, full_name, avatar_url)')
+        .eq('following_id', uid)
+        .eq('status', 'accepted')
+        .order('created_at', ascending: false) as List;
+    return rows.map((r) => Map<String, dynamic>.from(r as Map)).toList();
+  }
+
   // ── Follow requests (private accounts) ────────────────────
 
   Future<List<Map<String, dynamic>>> fetchFollowRequests() async {

@@ -40,6 +40,7 @@ import '../services/youtube_service.dart';
 import '../../features/home/presentation/screens/video_player_screen.dart';
 import '../../features/stories/presentation/screens/story_viewer_screen.dart';
 import '../../features/stories/presentation/screens/story_creator_screen.dart';
+import '../../features/stories/presentation/screens/updates_screen.dart';
 import '../../features/home/domain/models/story_model.dart';
 import '../../features/live/domain/models/live_stream_model.dart';
 import '../../features/live/data/live_repository.dart';
@@ -124,6 +125,12 @@ GoRouter appRouter(AppRouterRef ref) {
             ),
           ),
           GoRoute(
+            path: AppRoutes.updates,
+            pageBuilder: (ctx, state) => const NoTransitionPage(
+              child: UpdatesScreen(),
+            ),
+          ),
+          GoRoute(
             path: AppRoutes.chats,
             pageBuilder: (ctx, state) => const NoTransitionPage(
               child: ChatsScreen(),
@@ -153,7 +160,9 @@ GoRouter appRouter(AppRouterRef ref) {
       // ── Post ──────────────────────────────────────────────────
       GoRoute(
         path: AppRoutes.newPost,
-        builder: (ctx, state) => const NewPostScreen(),
+        builder: (ctx, state) => NewPostScreen(
+          isReelMode: state.uri.queryParameters['mode'] == 'reel',
+        ),
       ),
       GoRoute(
         path: '/post/:postId',

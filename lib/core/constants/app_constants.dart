@@ -27,13 +27,23 @@ abstract class AppConstants {
   static const String paystackPublicKey = 'pk_test_REPLACE_ME';
 
   // ── Ads (AdMob) ───────────────────────────────────────────
-  // These are Google's public TEST ad unit ids — safe to ship while
-  // developing, but MUST be swapped for real ones before release
-  // (the App IDs in AndroidManifest.xml / Info.plist too).
+  // Android uses the real production ad unit (App ID lives in
+  // AndroidManifest.xml). iOS isn't registered in AdMob yet, so it
+  // stays on Google's public TEST ad unit id until that happens
+  // (the App ID in Info.plist too).
   static const String admobAndroidBannerAdUnitId =
-      'ca-app-pub-3940256099942544/6300978111';
+      'ca-app-pub-3541385284109296/4105441126';
   static const String admobIosBannerAdUnitId =
       'ca-app-pub-3940256099942544/2934735716';
+  // Dev devices that should always receive TEST ads even though real ad
+  // unit ids are wired in — repeatedly loading/tapping real ads from your
+  // own device risks Google flagging the account for invalid traffic.
+  // On first debug run, check `flutter logs` (or Xcode console on iOS) for
+  // a line like:
+  //   "Use RequestConfiguration.Builder.setTestDeviceIds(Arrays.asList(
+  //    "33BE2250B43518CCDA7DE426D04EE231"))"
+  // and add that hash here.
+  static const List<String> admobTestDeviceIds = [];
   // Number of feed posts / reels between each inserted ad slot.
   static const int adFrequency = 6;
 

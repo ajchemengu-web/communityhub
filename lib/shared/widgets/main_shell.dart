@@ -12,6 +12,7 @@ class MainShell extends ConsumerWidget {
 
   static const _routes = [
     AppRoutes.home,
+    AppRoutes.updates,
     AppRoutes.chats,
     AppRoutes.notifications,
     AppRoutes.profile,
@@ -54,46 +55,28 @@ class MainShell extends ConsumerWidget {
                   selected: selectedIndex == 0,
                   onTap: () => context.go(AppRoutes.home),
                 ),
+                // Updates (Stories)
+                _NavItem(
+                  icon: Icons.donut_large_outlined,
+                  activeIcon: Icons.donut_large_rounded,
+                  label: 'Updates',
+                  selected: selectedIndex == 1,
+                  onTap: () => context.go(AppRoutes.updates),
+                ),
                 // Messages
                 _NavItem(
                   icon: Icons.chat_bubble_outline_rounded,
                   activeIcon: Icons.chat_bubble_rounded,
                   label: 'Messages',
-                  selected: selectedIndex == 1,
+                  selected: selectedIndex == 2,
                   onTap: () => context.go(AppRoutes.chats),
-                ),
-                // Centre post button
-                Expanded(
-                  child: Center(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => context.push(AppRoutes.cameraRecorder),
-                      child: Container(
-                        width: 50,
-                        height: 50,
-                        decoration: const BoxDecoration(
-                          gradient: AppColors.goldGradient,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Color(0x55F9A825),
-                              blurRadius: 10,
-                              offset: Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: const Icon(Icons.add,
-                            color: Colors.white, size: 28),
-                      ),
-                    ),
-                  ),
                 ),
                 // Notifications with badge
                 _NavItem(
                   icon: Icons.notifications_none_outlined,
                   activeIcon: Icons.notifications,
                   label: 'Alerts',
-                  selected: selectedIndex == 2,
+                  selected: selectedIndex == 3,
                   badge: unreadCount > 0 ? unreadCount : null,
                   onTap: () => context.go(AppRoutes.notifications),
                 ),
@@ -102,7 +85,7 @@ class MainShell extends ConsumerWidget {
                   icon: Icons.person_outline,
                   activeIcon: Icons.person,
                   label: 'Profile',
-                  selected: selectedIndex == 3,
+                  selected: selectedIndex == 4,
                   onTap: () => context.go(AppRoutes.profile),
                 ),
               ],

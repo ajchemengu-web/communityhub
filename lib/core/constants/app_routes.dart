@@ -15,6 +15,7 @@ abstract class AppRoutes {
   static const String search = '/shell/search';
   static const String newPost = '/shell/new-post';
   static const String reels = '/shell/reels';
+  static const String updates = '/shell/updates';
   static const String profile = '/shell/profile';
 
   // ── Social ────────────────────────────────────────────────

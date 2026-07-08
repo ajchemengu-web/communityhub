@@ -377,6 +377,31 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
             ),
           ),
 
+        // ── Attached audio track ──────────────────────────────
+        if (post.hasAudioTrack)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.music_note_rounded,
+                    size: 14, color: AppColors.textDarkSecondary),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    '${post.audioTitle ?? ''}${post.audioArtist != null ? ' · ${post.audioArtist}' : ''}',
+                    style: AppTextStyles.captionText.copyWith(
+                      color: AppColors.textDarkSecondary,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
         // ── View all comments ─────────────────────────────────
         if (post.commentsCount > 0)
           Padding(

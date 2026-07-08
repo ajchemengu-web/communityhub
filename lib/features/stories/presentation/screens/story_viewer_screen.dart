@@ -8,6 +8,8 @@ import 'package:video_player/video_player.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../chat/data/chat_repository.dart';
+import '../../../home/data/feed_repository.dart';
 import '../../../home/domain/models/story_model.dart';
 import '../providers/story_viewer_provider.dart';
 
@@ -327,16 +329,17 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen>
                 ),
               ),
 
-            // ── Reply input (only others' stories) ─────────
-            if (story.userId != SupabaseService.currentUserId)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  child: _ReplyInput(story: story),
-                ),
+            // ── Reply input (others' stories) or viewer count (yours) ──
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: story.userId != SupabaseService.currentUserId
+                    ? _ReplyInput(story: story)
+                    : _ViewerCountPill(story: story),
               ),
+            ),
           ],
         ),
       ),
@@ -400,11 +403,50 @@ class _ReplyInput extends StatefulWidget {
 class _ReplyInputState extends State<_ReplyInput> {
   final _ctrl = TextEditingController();
   bool _hasFocus = false;
+  bool _sending = false;
 
   @override
   void dispose() {
     _ctrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _send() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    try {
+      final convo = await ChatRepository.instance
+          .getOrCreateDirectConversation(widget.story.userId);
+      await ChatRepository.instance.sendMessage(
+        conversationId: convo.id,
+        content: text,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Replied to ${widget.story.username}'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.green,
+          ),
+        );
+        _ctrl.clear();
+        FocusScope.of(context).unfocus();
+        setState(() => _hasFocus = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not send reply: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   @override
@@ -443,19 +485,7 @@ class _ReplyInputState extends State<_ReplyInput> {
           if (_hasFocus || _ctrl.text.isNotEmpty) ...[
             const SizedBox(width: 8),
             GestureDetector(
-              onTap: () {
-                if (_ctrl.text.trim().isEmpty) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                        'Replied to ${widget.story.username}'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-                _ctrl.clear();
-                FocusScope.of(context).unfocus();
-                setState(() => _hasFocus = false);
-              },
+              onTap: _sending ? null : _send,
               child: Container(
                 width: 40,
                 height: 40,
@@ -463,11 +493,153 @@ class _ReplyInputState extends State<_ReplyInput> {
                   color: AppColors.primary,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.send_rounded,
-                    color: Colors.white, size: 18),
+                child: _sending
+                    ? const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.send_rounded,
+                        color: Colors.white, size: 18),
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Viewer Count Pill — shown instead of the reply input when this is
+// your own story. Tap to see who's viewed it.
+// ─────────────────────────────────────────────────────────────────
+
+class _ViewerCountPill extends StatefulWidget {
+  const _ViewerCountPill({required this.story});
+  final StoryModel story;
+
+  @override
+  State<_ViewerCountPill> createState() => _ViewerCountPillState();
+}
+
+class _ViewerCountPillState extends State<_ViewerCountPill> {
+  List<Map<String, dynamic>>? _viewers;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_ViewerCountPill old) {
+    super.didUpdateWidget(old);
+    if (old.story.id != widget.story.id) {
+      setState(() => _viewers = null);
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    final viewers =
+        await FeedRepository.instance.fetchStoryViewers(widget.story.id);
+    if (mounted) setState(() => _viewers = viewers);
+  }
+
+  void _showViewers() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF111111),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => _ViewersSheet(viewers: _viewers ?? []),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = _viewers?.length ?? 0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: GestureDetector(
+        onTap: _viewers == null ? null : _showViewers,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.remove_red_eye_outlined,
+                color: Colors.white70, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              _viewers == null ? 'Loading…' : '$count views',
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewersSheet extends StatelessWidget {
+  const _ViewersSheet({required this.viewers});
+  final List<Map<String, dynamic>> viewers;
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.5,
+      minChildSize: 0.3,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (_, scrollCtrl) => Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+                color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+          ),
+          const SizedBox(height: 14),
+          Text('${viewers.length} views',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: viewers.isEmpty
+                ? const Center(
+                    child: Text('No views yet',
+                        style: TextStyle(color: Colors.white38)),
+                  )
+                : ListView.builder(
+                    controller: scrollCtrl,
+                    itemCount: viewers.length,
+                    itemBuilder: (_, i) {
+                      final v = viewers[i];
+                      final user =
+                          Map<String, dynamic>.from(v['users'] as Map? ?? {});
+                      final avatarUrl = user['avatar_url'] as String?;
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: const Color(0xFF2A2A2A),
+                          backgroundImage:
+                              (avatarUrl?.isNotEmpty ?? false)
+                                  ? NetworkImage(avatarUrl!)
+                                  : null,
+                          child: (avatarUrl?.isEmpty ?? true)
+                              ? const Icon(Icons.person,
+                                  color: Colors.white38)
+                              : null,
+                        ),
+                        title: Text(user['username'] as String? ?? '',
+                            style: const TextStyle(color: Colors.white)),
+                      );
+                    },
+                  ),
+          ),
         ],
       ),
     );

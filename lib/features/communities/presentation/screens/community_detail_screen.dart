@@ -521,18 +521,9 @@ class _CommunityDetailScreenState
                             borderRadius: BorderRadius.circular(28)),
                       ),
                     )
-                  : OutlinedButton.icon(
-                      onPressed: () => context.push(AppRoutes.newPost),
-                      icon: const Icon(Icons.edit_outlined),
-                      label: const Text('New post'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.primary),
-                        minimumSize: const Size.fromHeight(50),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28)),
-                      ),
-                    )
+                  // General posting is retired — members just have nothing
+                  // to do here now (moderators still get "Add group" above).
+                  : const SizedBox.shrink()
               : c.memberStatus == 'pending'
                   ? OutlinedButton.icon(
                       onPressed: null,

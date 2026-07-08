@@ -446,6 +446,31 @@ class _PostBody extends StatelessWidget {
           ),
         ],
 
+        // Attached audio track
+        if (post.hasAudioTrack) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.music_note_rounded,
+                    size: 15, color: Colors.white54),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    '${post.audioTitle ?? ''}${post.audioArtist != null ? ' · ${post.audioArtist}' : ''}',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: Colors.white54),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Media
         if (post.mediaUrls.isNotEmpty) ...[
           const SizedBox(height: 12),

@@ -1,10 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/constants/app_constants.dart';
-import '../../../../core/services/supabase_service.dart';
 import '../../../../core/services/youtube_service.dart';
-import '../../../boosts/data/boosts_repository.dart';
 import '../../data/feed_repository.dart';
 import '../../domain/models/post_model.dart';
 
@@ -26,57 +24,93 @@ class FeedItem {
 
 // ── Feed Notifier (paginated) ──────────────────────────────────
 
+/// Home feed is YouTube-only now (general posting retired — `_posts`
+/// stays empty forever, kept only so [toggleLike]/[toggleBookmark]
+/// remain harmless no-ops for whatever UI still calls them).
+///
+/// The real content comes from YouTube, and — same root cause already
+/// fixed for Reels — `FeedRepository.fetchCachedVideos` alone hits a
+/// hard wall almost immediately: `youtube_cache` is typically empty, so
+/// every call falls through to a live YouTube API request that, without
+/// a real page token, just returns the same "first page" every time.
+/// This tracks a real `nextPageToken` per hub and front-loads a deep
+/// buffer up front, exactly like `ReelsFeedNotifier`.
 class FeedNotifier
     extends AutoDisposeFamilyAsyncNotifier<List<FeedItem>, String> {
   final _repo = FeedRepository.instance;
+  final _yt = YouTubeService.instance;
 
-  // Pagination state
   final List<PostModel> _posts = [];
   final List<YouTubeVideo> _videos = [];
-  final Set<String> _boostedPostIds = {};
-  bool _postsHasMore = true;
-  bool _ytHasMore = true;
-  bool _isLoadingMore = false;
-  DateTime? _cursor;
-  int _ytOffset = 0;
-  static const int _ytPageSize = 10;
+  final Set<String> _seenVideoIds = {};
+  final Map<String, String?> _nextPageTokens = {};
+  final Map<String, int> _hubCounts = {};
+  final Set<String> _exhaustedHubs = {};
+  List<String> _hubs = const [];
 
-  bool get hasMore => _postsHasMore || _ytHasMore;
+  static const bool _postsHasMore = false;
+  bool _isLoadingMore = false;
+  // search.list costs the same 100-unit quota per call regardless of
+  // maxResults (up to the API max of 50) — request the max every time
+  // so _minPerHub is usually reached in a single call per hub instead
+  // of 5+ (see reels_feed_provider.dart for the same fix + rationale).
+  static const int _perHubResults = 50;
+  static const int _minPerHub = 40;
+
+  bool get hasMore => _postsHasMore || _exhaustedHubs.length < _hubs.length;
   bool get isLoadingMore => _isLoadingMore;
+
+  /// Which real YouTube hub queries feed a given tab. Mirrors the same
+  /// parent/sub-hub expansion `FeedRepository.fetchPosts` used for posts,
+  /// so a parent tab (e.g. "Science") pulls from all its sub-hubs too.
+  List<String> _hubSetFor(String hubType) {
+    if (hubType == AppConstants.hubAll) {
+      return const [
+        AppConstants.hubFaith,
+        AppConstants.hubTechnology,
+        AppConstants.hubScience,
+        AppConstants.hubLanguages,
+        AppConstants.hubCareer,
+      ];
+    }
+    if (hubType == AppConstants.hubScience) {
+      return [AppConstants.hubScience, ...AppConstants.scienceSubHubs];
+    }
+    if (hubType == AppConstants.hubTechnology) {
+      return [AppConstants.hubTechnology, ...AppConstants.technologySubHubs];
+    }
+    if (hubType == AppConstants.hubLanguages) {
+      return [AppConstants.hubLanguages, ...AppConstants.languageSubHubs];
+    }
+    return [hubType];
+  }
 
   @override
   Future<List<FeedItem>> build(String hubType) async {
-    // Reset on rebuild (hub switch or refresh)
     _posts.clear();
     _videos.clear();
-    _postsHasMore = true;
-    _ytHasMore = true;
+    _seenVideoIds.clear();
+    _nextPageTokens.clear();
+    _hubCounts.clear();
+    _exhaustedHubs.clear();
     _isLoadingMore = false;
-    _cursor = null;
-    _ytOffset = 0;
+    _hubs = _hubSetFor(hubType);
 
-    // Parallel fetch: first page of posts + YouTube
-    final results = await Future.wait([
-      _repo.fetchPosts(hubType: hubType, limit: AppConstants.feedPageSize)
-          .catchError((_) => const FeedPage(posts: [], hasMore: false)),
-      _repo.fetchCachedVideos(hubType: hubType, limit: _ytPageSize, offset: 0),
-    ]);
+    // Cache first — cheap, forward-compatible if it's ever populated by a
+    // background refresh job. Today this is typically a no-op fallthrough.
+    try {
+      final cached = await _repo.fetchCachedVideos(
+          hubType: hubType, limit: 20, offset: 0);
+      _appendUnique(cached);
+    } catch (_) {}
 
-    final page = results[0] as FeedPage;
-    final ytPage = results[1] as List<YouTubeVideo>;
+    // Front-load a real, deep buffer per hub in parallel instead of
+    // relying entirely on scroll-timed loadMore() calls.
+    await Future.wait(_hubs.map((hub) => _fetchHubUntil(hub, _minPerHub)));
 
-    _postsHasMore = page.hasMore;
-    _ytHasMore = ytPage.length >= _ytPageSize;
-    _posts.addAll(page.posts);
-    _videos.addAll(ytPage);
-    _ytOffset = ytPage.length;
-    if (_posts.isNotEmpty) _cursor = _posts.last.createdAt;
-
-    // Surface actively-boosted posts at the top of the first page.
-    await _applyBoosts();
-
-    // Subscribe to realtime new posts
-    _subscribeToRealtime(hubType);
+    debugPrint(
+      '[HomeFeed] hub=$hubType initial load complete — total unique videos: ${_videos.length}',
+    );
 
     return _buildFeedItems();
   }
@@ -88,38 +122,61 @@ class FeedNotifier
     if (state is AsyncLoading) return;
 
     _isLoadingMore = true;
-
     try {
-      await Future.wait([
-        if (_postsHasMore)
-          _repo.fetchPosts(
-            hubType: arg,
-            cursor: _cursor,
-            limit: AppConstants.feedPageSize,
-          ).then((page) {
-            _postsHasMore = page.hasMore;
-            _posts.addAll(page.posts);
-            if (page.posts.isNotEmpty) _cursor = _posts.last.createdAt;
-          }).catchError((_) {}),
-
-        if (_ytHasMore)
-          _repo.fetchCachedVideos(
-            hubType: arg,
-            limit: _ytPageSize,
-            offset: _ytOffset,
-          ).then((ytPage) {
-            _ytHasMore = ytPage.length >= _ytPageSize;
-            _videos.addAll(ytPage);
-            _ytOffset += ytPage.length;
-          }).catchError((_) {}),
-      ]);
-
-      state = AsyncData(_buildFeedItems());
-    } catch (_) {
-      // Silently fail; don't clear existing data
+      final before = _videos.length;
+      await Future.wait(_hubs
+          .where((h) => !_exhaustedHubs.contains(h))
+          .map((hub) => _fetchOnePage(hub)));
+      if (_videos.length > before) {
+        state = AsyncData(_buildFeedItems());
+      }
     } finally {
       _isLoadingMore = false;
     }
+  }
+
+  /// Fetches pages for [hub] (following its own `nextPageToken` chain)
+  /// until it has accumulated at least [target] unique videos or is
+  /// exhausted, then logs the final count for that hub.
+  Future<void> _fetchHubUntil(String hub, int target) async {
+    while ((_hubCounts[hub] ?? 0) < target && !_exhaustedHubs.contains(hub)) {
+      await _fetchOnePage(hub);
+    }
+    debugPrint(
+      '[HomeFeed] hub=$hub fetched=${_hubCounts[hub] ?? 0}/$target '
+      'exhausted=${_exhaustedHubs.contains(hub)}',
+    );
+  }
+
+  Future<void> _fetchOnePage(String hub) async {
+    if (_exhaustedHubs.contains(hub)) return;
+    try {
+      final page = await _yt.getHubFeedPage(
+        hubType: hub,
+        maxResults: _perHubResults,
+        pageToken: _nextPageTokens[hub],
+      );
+      final added = _appendUnique(page.videos);
+      _hubCounts[hub] = (_hubCounts[hub] ?? 0) + added;
+      _nextPageTokens[hub] = page.nextPageToken;
+      if (page.nextPageToken == null) _exhaustedHubs.add(hub);
+    } catch (e) {
+      // A hub that keeps failing (quota, network) shouldn't be retried
+      // forever — treat it as exhausted rather than spinning on it.
+      debugPrint('[HomeFeed] hub=$hub fetch failed, marking exhausted: $e');
+      _exhaustedHubs.add(hub);
+    }
+  }
+
+  int _appendUnique(List<YouTubeVideo> page) {
+    var added = 0;
+    for (final v in page) {
+      if (_seenVideoIds.add(v.id)) {
+        _videos.add(v);
+        added++;
+      }
+    }
+    return added;
   }
 
   // ── Optimistic like toggle ─────────────────────────────────
@@ -177,106 +234,18 @@ class FeedNotifier
     state = AsyncData(_buildFeedItems());
   }
 
-  // ── Realtime subscription ─────────────────────────────────
-
-  void _subscribeToRealtime(String hubType) {
-    final channel = SupabaseService.client.channel('feed:$hubType');
-
-    channel.onPostgresChanges(
-      event: PostgresChangeEvent.insert,
-      schema: 'public',
-      table: 'posts',
-      callback: (payload) async {
-        final newRow = payload.newRecord;
-        if (hubType != AppConstants.hubAll &&
-            newRow['hub_type'] != hubType) {
-          return;
-        }
-
-        // Fetch the full row with user join
-        try {
-          final row = await SupabaseService.client
-              .from('posts')
-              .select('*')
-              .eq('id', newRow['id'] as String)
-              .single();
-          final newPost =
-              PostModel.fromMap(Map<String, dynamic>.from(row));
-          _posts.insert(0, newPost);
-          state = AsyncData(_buildFeedItems());
-        } catch (_) {}
-      },
-    );
-
-    channel.subscribe();
-
-    // Clean up when provider is disposed
-    ref.onDispose(() => channel.unsubscribe());
-  }
-
-  // ── Boosted posts (self-serve promotion) ──────────────────
-
-  /// Fetches actively-boosted post ids and moves them to the front of
-  /// `_posts` — fetching any that aren't already in the loaded page.
-  /// Only applied to the first page; re-ranking across paginated cursor
-  /// pages isn't worth the complexity for a v1.
-  Future<void> _applyBoosts() async {
-    try {
-      final boostedIds = await BoostsRepository.instance.fetchActiveBoostedPostIds();
-      if (boostedIds.isEmpty) return;
-
-      _boostedPostIds
-        ..clear()
-        ..addAll(boostedIds);
-
-      final present = _posts.map((p) => p.id).toSet();
-      final missingIds =
-          boostedIds.where((id) => !present.contains(id)).toList();
-      if (missingIds.isNotEmpty) {
-        final boostedPosts = await _repo.fetchPostsByIds(missingIds);
-        _posts.insertAll(0, boostedPosts);
-      }
-
-      _posts.sort((a, b) {
-        final aBoosted = _boostedPostIds.contains(a.id) ? 1 : 0;
-        final bBoosted = _boostedPostIds.contains(b.id) ? 1 : 0;
-        return bBoosted - aBoosted;
-      });
-    } catch (_) {
-      // Boosting is best-effort — never block the feed on it.
-    }
-  }
-
   // ── Build interleaved list ────────────────────────────────
 
-  /// Interleaves YouTube videos every 4 posts.
-  /// When there are no posts, shows all YouTube videos directly.
+  /// Home feed is YouTube-only now (general posting retired) — interleave
+  /// an ad slide every [AppConstants.adFrequency] videos.
   List<FeedItem> _buildFeedItems() {
-    if (_posts.isEmpty) {
-      return _videos.map((v) => FeedItem(youtubeVideo: v)).toList();
-    }
-
     final result = <FeedItem>[];
-    int ytIndex = 0;
-
-    for (int i = 0; i < _posts.length; i++) {
-      result.add(FeedItem(
-        post: _posts[i],
-        isBoosted: _boostedPostIds.contains(_posts[i].id),
-      ));
-      if ((i + 1) % 4 == 0 && ytIndex < _videos.length) {
-        result.add(FeedItem(youtubeVideo: _videos[ytIndex++]));
-      }
+    for (int i = 0; i < _videos.length; i++) {
+      result.add(FeedItem(youtubeVideo: _videos[i]));
       if ((i + 1) % AppConstants.adFrequency == 0) {
         result.add(const FeedItem(isAd: true));
       }
     }
-
-    // Append remaining YouTube videos after all posts
-    while (ytIndex < _videos.length) {
-      result.add(FeedItem(youtubeVideo: _videos[ytIndex++]));
-    }
-
     return result;
   }
 }
@@ -285,5 +254,3 @@ class FeedNotifier
 
 final feedProvider = AsyncNotifierProvider.autoDispose
     .family<FeedNotifier, List<FeedItem>, String>(FeedNotifier.new);
-
-

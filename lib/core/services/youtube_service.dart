@@ -114,6 +114,62 @@ class YouTubeService {
     );
   }
 
+  // ── Page-aware search (exposes YouTube's own nextPageToken) ──
+  // `searchVideos` above discards the API's nextPageToken entirely, so
+  // callers can never actually page past the first result set — every
+  // repeated call with the same query just returns the same videos. This
+  // variant surfaces the real token so callers (like Reels' infinite
+  // scroll) can walk through YouTube's actual result pages.
+  Future<YouTubeSearchPage> searchVideosPage({
+    required String query,
+    String type = 'video',
+    int maxResults = AppConstants.youtubeMaxResults,
+    String? pageToken,
+    String order = 'relevance',
+    String? videoCategoryId,
+  }) async {
+    try {
+      final response = await _dio.get('/search', queryParameters: {
+        'part': 'snippet',
+        'q': query,
+        'type': type,
+        'maxResults': maxResults,
+        'order': order,
+        'safeSearch': 'strict',
+        if (pageToken != null) 'pageToken': pageToken,
+        if (videoCategoryId != null) 'videoCategoryId': videoCategoryId,
+        'key': _apiKey,
+      });
+
+      final items = response.data['items'] as List? ?? [];
+      return YouTubeSearchPage(
+        videos:
+            items.map((item) => YouTubeVideo.fromSearchResult(item)).toList(),
+        nextPageToken: response.data['nextPageToken'] as String?,
+      );
+    } on DioException catch (e) {
+      throw YouTubeException(e.message ?? 'YouTube API error', e.response?.statusCode);
+    }
+  }
+
+  /// Page-aware version of [getHubFeed] — same query construction, but
+  /// returns the real nextPageToken instead of discarding it.
+  Future<YouTubeSearchPage> getHubFeedPage({
+    required String hubType,
+    int maxResults = AppConstants.youtubeMaxResults,
+    String? pageToken,
+  }) async {
+    final keywords = AppConstants.keywordsFor(hubType);
+    if (keywords.isEmpty) return const YouTubeSearchPage(videos: []);
+    final query = keywords.take(3).join(' OR ');
+    return searchVideosPage(
+      query: query,
+      maxResults: maxResults,
+      pageToken: pageToken,
+      order: 'relevance',
+    );
+  }
+
   // ── Channel Videos ────────────────────────────────────────
   Future<List<YouTubeVideo>> getChannelVideos({
     required String channelId,
@@ -150,6 +206,15 @@ class YouTubeService {
 }
 
 // ── Models ────────────────────────────────────────────────────
+
+/// A single page of search results plus YouTube's own continuation token
+/// (null when there are no more pages for this query).
+class YouTubeSearchPage {
+  const YouTubeSearchPage({required this.videos, this.nextPageToken});
+  final List<YouTubeVideo> videos;
+  final String? nextPageToken;
+}
+
 class YouTubeVideo {
   final String id;
   final String title;

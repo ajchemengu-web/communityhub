@@ -1,18 +1,23 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/constants/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/draft_repository.dart';
+import '../../data/post_repository.dart';
 import '../providers/new_post_provider.dart';
 
 // ── Step enum ─────────────────────────────────────────────────────
@@ -23,7 +28,12 @@ enum _Step { picker, edit, share }
 // ─────────────────────────────────────────────────────────────────
 
 class NewPostScreen extends ConsumerStatefulWidget {
-  const NewPostScreen({super.key});
+  const NewPostScreen({super.key, this.isReelMode = false});
+
+  /// Opens straight into Reel mode (Edits/Drafts/Templates pills, no
+  /// preview pane, submits with `is_reel: true`) instead of Post mode.
+  /// Switchable at runtime via the bottom Post/Reel tabs on the picker.
+  final bool isReelMode;
 
   @override
   ConsumerState<NewPostScreen> createState() => _NewPostScreenState();
@@ -31,18 +41,23 @@ class NewPostScreen extends ConsumerStatefulWidget {
 
 class _NewPostScreenState extends ConsumerState<NewPostScreen> {
   _Step _step = _Step.picker;
+  late bool _isReelMode = widget.isReelMode;
   AssetEntity? _selectedAsset;
   File? _selectedFile;
   Uint8List? _thumbnailBytes;
   final _captionCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
   String _audioLabel = 'Original Audio';
-  bool _aiLabel = false;
   bool _hasDraft = false;
 
   @override
   void initState() {
     super.initState();
+    if (_isReelMode) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => ref.read(newPostProvider.notifier).setReelMode(true),
+      );
+    }
     DraftRepository.instance.hasDraft().then((v) {
       if (mounted) setState(() => _hasDraft = v);
     });
@@ -111,6 +126,42 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
     );
   }
 
+  /// Called when the Edit step finishes. [editedFile] is the real
+  /// composited image (filter/brightness/text overlays baked in) when one
+  /// was produced, or null when there's nothing to bake in (video, no
+  /// edits made, or the capture failed) — in that case the original file
+  /// from the picker step is kept as-is.
+  Future<void> _onEditNext(File? editedFile) async {
+    if (editedFile != null) {
+      final bytes = await editedFile.readAsBytes();
+      ref.read(newPostProvider.notifier).replaceFirstMedia(editedFile);
+      if (!mounted) return;
+      setState(() {
+        _selectedFile = editedFile;
+        _thumbnailBytes = bytes;
+      });
+    }
+    setState(() => _step = _Step.share);
+  }
+
+  /// Called when a track is chosen in the Audio tool. Previously this
+  /// picker let you preview/play songs but never actually attached one to
+  /// the post — selecting "Original Audio" (the sentinel entry with an
+  /// empty preview URL) clears any attached track instead.
+  void _onAudioSelected(_AudioTrack track) {
+    if (track.previewUrl.isEmpty) {
+      ref.read(newPostProvider.notifier).clearAudioTrack();
+      setState(() => _audioLabel = 'Original Audio');
+      return;
+    }
+    ref.read(newPostProvider.notifier).setAudioTrack(
+          title: track.title,
+          artist: track.artist,
+          previewUrl: track.previewUrl,
+        );
+    setState(() => _audioLabel = '${track.title} · ${track.artist}');
+  }
+
   Future<void> _submit() async {
     await ref.read(newPostProvider.notifier).submit();
     final state = ref.read(newPostProvider);
@@ -150,6 +201,17 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
             onClose: () => context.pop(),
             hasDraft: _hasDraft,
             onLoadDraft: _loadDraft,
+            isReelMode: _isReelMode,
+            onModeChanged: (reel) {
+              if (reel == _isReelMode) return;
+              ref.read(newPostProvider.notifier).setReelMode(reel);
+              setState(() => _isReelMode = reel);
+            },
+            // Story/Live are different content types entirely — replace
+            // this route rather than pushing on top of it, so the nav
+            // stack doesn't grow every time someone taps between tabs.
+            onNavigateStory: () => context.pushReplacement('/story/create'),
+            onNavigateLive: () => context.pushReplacement(AppRoutes.liveStart),
           ),
         _Step.edit => _EditStep(
             asset: _selectedAsset,
@@ -164,7 +226,8 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
                 _step = _Step.picker;
               });
             },
-            onNext: () => setState(() => _step = _Step.share),
+            onNext: _onEditNext,
+            onAudioSelected: _onAudioSelected,
           ),
         _Step.share => _ShareStep(
             thumbnailBytes: _thumbnailBytes,
@@ -173,8 +236,6 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
             captionCtrl: _captionCtrl,
             locationCtrl: _locationCtrl,
             audioLabel: _audioLabel,
-            aiLabel: _aiLabel,
-            onAiLabelChanged: (v) => setState(() => _aiLabel = v),
             onAudioLabelChanged: (v) => setState(() => _audioLabel = v),
             onBack: () => setState(() => _step = _Step.edit),
             onSubmit: _submit,
@@ -195,18 +256,25 @@ class _GalleryPickerStep extends StatefulWidget {
     required this.onClose,
     required this.hasDraft,
     required this.onLoadDraft,
+    required this.isReelMode,
+    required this.onModeChanged,
+    required this.onNavigateStory,
+    required this.onNavigateLive,
   });
   final Future<void> Function(AssetEntity) onSelected;
   final VoidCallback onClose;
   final bool hasDraft;
   final VoidCallback onLoadDraft;
+  final bool isReelMode;
+  final ValueChanged<bool> onModeChanged;
+  final VoidCallback onNavigateStory;
+  final VoidCallback onNavigateLive;
 
   @override
   State<_GalleryPickerStep> createState() => _GalleryPickerStepState();
 }
 
-class _GalleryPickerStepState extends State<_GalleryPickerStep>
-    with SingleTickerProviderStateMixin {
+class _GalleryPickerStepState extends State<_GalleryPickerStep> {
   List<AssetPathEntity> _albums = [];
   AssetPathEntity? _currentAlbum;
   List<AssetEntity> _assets = [];
@@ -216,19 +284,11 @@ class _GalleryPickerStepState extends State<_GalleryPickerStep>
   bool _permDenied = false;
   int _page = 0;
   static const _pageSize = 60;
-  late TabController _tabCtrl;
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
     _requestAndLoad();
-  }
-
-  @override
-  void dispose() {
-    _tabCtrl.dispose();
-    super.dispose();
   }
 
   Future<void> _requestAndLoad() async {
@@ -316,6 +376,7 @@ class _GalleryPickerStepState extends State<_GalleryPickerStep>
 
   @override
   Widget build(BuildContext context) {
+    final isReel = widget.isReelMode;
     return Column(
       children: [
         // ── AppBar ─────────────────────────────────────────────
@@ -331,80 +392,76 @@ class _GalleryPickerStepState extends State<_GalleryPickerStep>
                       icon: const Icon(Icons.close, color: Colors.white),
                       onPressed: widget.onClose,
                     ),
-                    const Expanded(
-                      child: Text('New reel',
+                    Expanded(
+                      child: Text(isReel ? 'New reel' : 'New post',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                               color: Colors.white,
                               fontSize: 17,
                               fontWeight: FontWeight.w600)),
                     ),
-                    const Icon(Icons.settings_outlined,
-                        color: Colors.white, size: 22),
+                    // Reel mode keeps a settings icon; Post mode shows a
+                    // real "Next" button, enabled once a preview is picked.
+                    if (isReel)
+                      const Icon(Icons.settings_outlined,
+                          color: Colors.white, size: 22)
+                    else
+                      TextButton(
+                        onPressed: _previewAsset != null
+                            ? () => widget.onSelected(_previewAsset!)
+                            : null,
+                        child: Text('Next',
+                            style: TextStyle(
+                              color: _previewAsset != null
+                                  ? const Color(0xFF0095F6)
+                                  : Colors.white24,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            )),
+                      ),
                   ],
                 ),
               ),
-              // Drafts / Templates chips
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
-                child: Row(
-                  children: [
-                    _Chip(
-                      label: widget.hasDraft ? 'Drafts · 1' : 'Drafts · 0',
-                      icon: Icons.layers_outlined,
-                      onTap: widget.hasDraft ? widget.onLoadDraft : null,
-                    ),
-                    const SizedBox(width: 10),
-                    const _Chip(
-                        label: 'Templates', icon: Icons.auto_awesome_mosaic_outlined),
-                  ],
+              // Edits / Drafts / Templates chips — reel mode only.
+              if (isReel)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+                  child: Row(
+                    children: [
+                      const _Chip(
+                          label: 'Edits', icon: Icons.auto_fix_high_rounded),
+                      const SizedBox(width: 10),
+                      _Chip(
+                        label: widget.hasDraft ? 'Drafts · 1' : 'Drafts · 0',
+                        icon: Icons.layers_outlined,
+                        onTap: widget.hasDraft ? widget.onLoadDraft : null,
+                      ),
+                      const SizedBox(width: 10),
+                      const _Chip(
+                          label: 'Templates',
+                          icon: Icons.auto_awesome_mosaic_outlined),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
         ),
 
-        // ── Preview pane ───────────────────────────────────────
-        AspectRatio(
-          aspectRatio: 1,
-          child: _permDenied
-              ? _PermDeniedBanner()
-              : _previewThumb != null
-                  ? Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.memory(_previewThumb!, fit: BoxFit.cover),
-                        // Tap to proceed
-                        if (_previewAsset != null)
-                          Positioned(
-                            bottom: 12,
-                            right: 12,
-                            child: GestureDetector(
-                              onTap: () {
-                                if (_previewAsset != null) {
-                                  widget.onSelected(_previewAsset!);
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.black54,
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.white38),
-                                ),
-                                child: const Text('Use this',
-                                    style: TextStyle(
-                                        color: Colors.white, fontSize: 13)),
-                              ),
-                            ),
-                          ),
-                      ],
-                    )
-                  : const Center(
-                      child: Icon(Icons.photo_library_outlined,
-                          color: Colors.white24, size: 48)),
-        ),
+        // ── Preview pane ─────────────────────────────────────
+        // Post mode only — reel mode skips straight to the grid, matching
+        // Instagram's reel picker (a single tap on a thumbnail there
+        // moves straight to editing rather than staging a preview first).
+        if (!isReel)
+          AspectRatio(
+            aspectRatio: 1,
+            child: _permDenied
+                ? _PermDeniedBanner()
+                : _previewThumb != null
+                    ? Image.memory(_previewThumb!, fit: BoxFit.cover)
+                    : const Center(
+                        child: Icon(Icons.photo_library_outlined,
+                            color: Colors.white24, size: 48)),
+          ),
 
         // ── Recents / Select bar ───────────────────────────────
         Padding(
@@ -470,33 +527,82 @@ class _GalleryPickerStepState extends State<_GalleryPickerStep>
                         return _GridThumbnail(
                           asset: asset,
                           isSelected: _previewAsset?.id == asset.id,
-                          onTap: () => _selectPreview(asset),
+                          // Reel mode: a single tap jumps straight to
+                          // editing. Post mode: single tap stages the
+                          // preview, "Next" (or double-tap) proceeds.
+                          onTap: isReel
+                              ? () => widget.onSelected(asset)
+                              : () => _selectPreview(asset),
                           onDoubleTap: () => widget.onSelected(asset),
                         );
                       },
                     ),
         ),
 
-        // ── Bottom tab bar: REEL | TEMPLATES ──────────────────
+        // ── Bottom mode switcher: POST | STORY | REEL | LIVE ──
         SafeArea(
           top: false,
           child: Container(
             color: const Color(0xFF111111),
-            child: TabBar(
-              controller: _tabCtrl,
-              tabs: const [
-                Tab(text: 'REEL'),
-                Tab(text: 'TEMPLATES'),
+            height: 48,
+            child: Row(
+              children: [
+                _ModeTab(
+                  label: 'POST',
+                  selected: !isReel,
+                  onTap: () => widget.onModeChanged(false),
+                ),
+                _ModeTab(
+                  label: 'STORY',
+                  selected: false,
+                  onTap: widget.onNavigateStory,
+                ),
+                _ModeTab(
+                  label: 'REEL',
+                  selected: isReel,
+                  onTap: () => widget.onModeChanged(true),
+                ),
+                _ModeTab(
+                  label: 'LIVE',
+                  selected: false,
+                  onTap: widget.onNavigateLive,
+                ),
               ],
-              labelColor: Colors.white,
-              unselectedLabelColor: Colors.white38,
-              indicatorColor: Colors.white,
-              labelStyle: const TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ModeTab extends StatelessWidget {
+  const _ModeTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.white38,
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -649,12 +755,17 @@ class _EditStep extends StatefulWidget {
     required this.thumbnailBytes,
     required this.onBack,
     required this.onNext,
+    required this.onAudioSelected,
   });
   final AssetEntity? asset;
   final File? file;
   final Uint8List? thumbnailBytes;
   final VoidCallback onBack;
-  final VoidCallback onNext;
+  /// Receives the composited (filter/brightness/overlays baked in) file
+  /// for image posts, or null when there's nothing to bake in (video, or
+  /// export failed) — the caller keeps the original file in that case.
+  final ValueChanged<File?> onNext;
+  final ValueChanged<_AudioTrack> onAudioSelected;
 
   @override
   State<_EditStep> createState() => _EditStepState();
@@ -665,14 +776,50 @@ class _EditStepState extends State<_EditStep> {
   bool _isVideo = false;
   bool _videoReady = false;
   bool _playing = false;
+  bool _exporting = false;
 
   // Overlays added by tools
   final List<_TextOverlay> _textOverlays = [];
-  double _currentFilter = 0; // 0–4 index
+  double _currentFilter = 0; // index into _filterNames / _kFilterMatrices
+  double _filterStrength = 1.0; // 0 (no effect) – 1 (full effect)
   BoxFit _fit = BoxFit.cover;
   double _brightness = 0;
 
-  static const _filterNames = ['Normal', 'Clarendon', 'Gingham', 'Moon', 'Lark'];
+  // Freehand drawing (pen tool)
+  final List<_DrawStroke> _strokes = [];
+  bool _isDrawing = false;
+  Color _drawColor = Colors.white;
+
+  // Scopes exactly what gets captured when exporting the edited image.
+  final GlobalKey _previewBoundaryKey = GlobalKey();
+
+  static const _filterNames = [
+    'Normal', 'Clarendon', 'Gingham', 'Moon', 'Lark',
+    'Juno', 'Ludwig', 'Aden', 'Valencia', 'Willow', 'Mayfair',
+  ];
+
+  /// Applies the selected filter + brightness to a preview widget. Used
+  /// for both the image and video layers so the preview is honest about
+  /// what's actually selected (previously only brightness affected the
+  /// image layer, and the video layer got no color effects at all).
+  Widget _withColorEffects(Widget child) {
+    // Blend between identity (no effect) and the selected filter's full
+    // matrix by _filterStrength, matching Instagram's filter-intensity
+    // slider rather than an all-or-nothing toggle.
+    final identity = _kFilterMatrices[0];
+    final full = _kFilterMatrices[_currentFilter.toInt()];
+    final blended = List.generate(
+      20,
+      (i) => identity[i] + (full[i] - identity[i]) * _filterStrength,
+    );
+    return ColorFiltered(
+      colorFilter: ColorFilter.matrix(_brightnessMatrix(_brightness)),
+      child: ColorFiltered(
+        colorFilter: ColorFilter.matrix(blended),
+        child: child,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -705,13 +852,21 @@ class _EditStepState extends State<_EditStep> {
     });
   }
 
+  /// Adds an overlay staggered below whatever's already placed, so new
+  /// text/stickers don't all land stacked exactly on top of each other.
+  void _addOverlay(_TextOverlay overlay) {
+    overlay.position =
+        Offset(0.5, (0.2 + _textOverlays.length * 0.1).clamp(0.05, 0.85));
+    setState(() => _textOverlays.add(overlay));
+  }
+
   // ── Audio picker ────────────────────────────────────────────────
   void _showAudioTool() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const _AudioPickerSheet(),
+      builder: (_) => _AudioPickerSheet(onSelected: widget.onAudioSelected),
     );
   }
 
@@ -757,8 +912,7 @@ class _EditStepState extends State<_EditStep> {
               itemCount: stickers.length,
               itemBuilder: (_, i) => GestureDetector(
                 onTap: () {
-                  setState(() => _textOverlays
-                      .add(_TextOverlay(text: stickers[i], isSticker: true)));
+                  _addOverlay(_TextOverlay(text: stickers[i], isSticker: true));
                   Navigator.pop(context);
                 },
                 child: Container(
@@ -786,44 +940,9 @@ class _EditStepState extends State<_EditStep> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.black,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-          left: 16,
-          right: 16,
-          top: 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              style: const TextStyle(color: Colors.white, fontSize: 18),
-              decoration: const InputDecoration(
-                hintText: 'Add text…',
-                hintStyle: TextStyle(color: Colors.white38),
-                border: InputBorder.none,
-              ),
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: () {
-                if (ctrl.text.trim().isNotEmpty) {
-                  setState(() => _textOverlays.add(
-                        _TextOverlay(text: ctrl.text.trim()),
-                      ));
-                }
-                Navigator.pop(context);
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                minimumSize: const Size.fromHeight(44),
-              ),
-              child: const Text('Add'),
-            ),
-          ],
-        ),
+      builder: (_) => _TextStylerSheet(
+        controller: ctrl,
+        onAdd: _addOverlay,
       ),
     );
   }
@@ -832,70 +951,103 @@ class _EditStepState extends State<_EditStep> {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF111111),
-      builder: (_) => SizedBox(
-        height: 160,
-        child: Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('Filter',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15)),
-            ),
-            Expanded(
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemCount: _filterNames.length,
-                itemBuilder: (_, i) {
-                  final selected = _currentFilter == i.toDouble();
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() => _currentFilter = i.toDouble());
-                      Navigator.pop(context);
-                    },
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 60,
-                          height: 60,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: selected
-                                  ? AppColors.primary
-                                  : Colors.white24,
-                              width: selected ? 2 : 1,
-                            ),
-                            color: const Color(0xFF2A2A2A),
-                          ),
-                          child: widget.thumbnailBytes != null
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(7),
-                                  child: Image.memory(
-                                      widget.thumbnailBytes!,
-                                      fit: BoxFit.cover),
-                                )
-                              : const Icon(Icons.image,
-                                  color: Colors.white38),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(_filterNames[i],
-                            style: TextStyle(
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSS) => SizedBox(
+          height: 230,
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('Filter',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15)),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  itemCount: _filterNames.length,
+                  itemBuilder: (_, i) {
+                    final selected = _currentFilter == i.toDouble();
+                    return GestureDetector(
+                      onTap: () {
+                        setSS(() {
+                          _currentFilter = i.toDouble();
+                          _filterStrength = 1.0;
+                        });
+                        setState(() {});
+                      },
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
                                 color: selected
                                     ? AppColors.primary
-                                    : Colors.white54,
-                                fontSize: 10)),
-                      ],
-                    ),
-                  );
-                },
+                                    : Colors.white24,
+                                width: selected ? 2 : 1,
+                              ),
+                              color: const Color(0xFF2A2A2A),
+                            ),
+                            child: widget.thumbnailBytes != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(7),
+                                    child: Image.memory(
+                                        widget.thumbnailBytes!,
+                                        fit: BoxFit.cover),
+                                  )
+                                : const Icon(Icons.image,
+                                    color: Colors.white38),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(_filterNames[i],
+                              style: TextStyle(
+                                  color: selected
+                                      ? AppColors.primary
+                                      : Colors.white54,
+                                  fontSize: 10)),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+              // Strength slider — blends between no effect and the
+              // selected filter's full matrix, like Instagram's filter
+              // intensity control (disabled on "Normal", which has no
+              // effect to scale in the first place).
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.opacity_rounded,
+                        color: Colors.white54, size: 18),
+                    Expanded(
+                      child: Slider(
+                        value: _filterStrength,
+                        min: 0,
+                        max: 1,
+                        activeColor: AppColors.primary,
+                        inactiveColor: Colors.white24,
+                        onChanged: _currentFilter == 0
+                            ? null
+                            : (v) {
+                                setSS(() => _filterStrength = v);
+                                setState(() {});
+                              },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -983,6 +1135,125 @@ class _EditStepState extends State<_EditStep> {
     );
   }
 
+  void _onDrawStart(DragStartDetails details, Size boxSize) {
+    final stroke = _DrawStroke(color: _drawColor);
+    stroke.points.add(Offset(
+      details.localPosition.dx / boxSize.width,
+      details.localPosition.dy / boxSize.height,
+    ));
+    setState(() => _strokes.add(stroke));
+  }
+
+  void _onDrawUpdate(DragUpdateDetails details, Size boxSize) {
+    if (_strokes.isEmpty) return;
+    setState(() {
+      _strokes.last.points.add(Offset(
+        details.localPosition.dx / boxSize.width,
+        details.localPosition.dy / boxSize.height,
+      ));
+    });
+  }
+
+  /// Renders one text/sticker overlay at its fractional position within
+  /// [boxSize], centered on that point (via [FractionalTranslation]) so
+  /// it doesn't need to know its own rendered size up front. Draggable —
+  /// panning updates the overlay's stored fractional position directly.
+  Widget _buildOverlay(int i, Size boxSize) {
+    final overlay = _textOverlays[i];
+    final font = _kTextFonts[overlay.fontIndex];
+
+    Widget content = overlay.isSticker
+        ? Text(overlay.text, style: const TextStyle(fontSize: 48))
+        : Text(
+            overlay.text,
+            textAlign: overlay.textAlign,
+            style: TextStyle(
+              color: overlay.color,
+              fontFamily: font.fontFamily,
+              fontWeight: font.fontWeight,
+              fontStyle: font.fontStyle,
+              fontSize: 22,
+            ),
+          );
+
+    if (!overlay.isSticker && overlay.hasBackground) {
+      content = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black54,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: content,
+      );
+    }
+
+    return Positioned(
+      left: overlay.position.dx * boxSize.width,
+      top: overlay.position.dy * boxSize.height,
+      child: FractionalTranslation(
+        translation: const Offset(-0.5, -0.5),
+        child: GestureDetector(
+          onLongPress: () => setState(() => _textOverlays.removeAt(i)),
+          onPanUpdate: (details) {
+            setState(() {
+              overlay.position += Offset(
+                details.delta.dx / boxSize.width,
+                details.delta.dy / boxSize.height,
+              );
+            });
+          },
+          child: content,
+        ),
+      ),
+    );
+  }
+
+  /// Captures the RepaintBoundary-scoped preview (media + filter +
+  /// brightness + text/sticker overlays) as a real PNG and hands it to
+  /// the caller to replace the original file. Videos can't have pixel
+  /// edits baked in without a video re-encoder (out of scope here — the
+  /// preview above still shows the chosen filter/brightness live, but
+  /// only the display, not the uploaded file), so this only applies to
+  /// images; any capture failure falls back to the original file too.
+  Future<void> _handleNext() async {
+    final hasEdits = _currentFilter != 0 ||
+        _brightness != 0 ||
+        _textOverlays.isNotEmpty ||
+        _strokes.isNotEmpty ||
+        _fit != BoxFit.cover;
+    if (_isVideo || !hasEdits) {
+      widget.onNext(null);
+      return;
+    }
+
+    setState(() => _exporting = true);
+    try {
+      final boundary = _previewBoundaryKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) {
+        widget.onNext(null);
+        return;
+      }
+      final image = await boundary.toImage(pixelRatio: 2.0);
+      final byteData =
+          await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) {
+        widget.onNext(null);
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final path =
+          '${dir.path}/edited_${DateTime.now().millisecondsSinceEpoch}.png';
+      final file = File(path);
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+      widget.onNext(file);
+    } catch (_) {
+      widget.onNext(null);
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1040,84 +1311,146 @@ class _EditStepState extends State<_EditStep> {
 
             // ── Media preview ────────────────────────────────────
             Expanded(
-              child: GestureDetector(
-                onTap: _isVideo ? _togglePlayPause : null,
-                child: Container(
-                  color: Colors.black,
-                  width: double.infinity,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Media
-                      if (widget.thumbnailBytes != null)
-                        Positioned.fill(
-                          child: ColorFiltered(
-                            colorFilter: ColorFilter.matrix(
-                              _brightnessMatrix(_brightness),
-                            ),
-                            child: Image.memory(
-                              widget.thumbnailBytes!,
-                              fit: _fit,
-                            ),
-                          ),
-                        ),
-                      // Video on top once ready
-                      if (_isVideo && _videoReady)
-                        Positioned.fill(
-                          child: FittedBox(
-                            fit: _fit,
-                            child: SizedBox(
-                              width: _videoCtrl!.value.size.width,
-                              height: _videoCtrl!.value.size.height,
-                              child: VideoPlayer(_videoCtrl!),
-                            ),
-                          ),
-                        ),
-                      // Play/pause icon
-                      if (_isVideo && !_playing)
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: const BoxDecoration(
-                            color: Colors.black45,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.play_arrow_rounded,
-                              color: Colors.white, size: 48),
-                        ),
-                      // Text / sticker overlays
-                      for (int i = 0; i < _textOverlays.length; i++)
-                        Positioned(
-                          top: 80.0 + i * 60,
-                          left: 0,
-                          right: 0,
-                          child: Center(
-                            child: GestureDetector(
-                              onLongPress: () =>
-                                  setState(() => _textOverlays.removeAt(i)),
-                              child: _textOverlays[i].isSticker
-                                  ? Text(_textOverlays[i].text,
-                                      style: const TextStyle(fontSize: 48))
-                                  : Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black54,
-                                        borderRadius:
-                                            BorderRadius.circular(6),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final boxSize = constraints.biggest;
+                  return GestureDetector(
+                    onTap: (_isVideo && !_isDrawing) ? _togglePlayPause : null,
+                    onPanStart: _isDrawing
+                        ? (d) => _onDrawStart(d, boxSize)
+                        : null,
+                    onPanUpdate: _isDrawing
+                        ? (d) => _onDrawUpdate(d, boxSize)
+                        : null,
+                    child: Container(
+                      color: Colors.black,
+                      width: double.infinity,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // RepaintBoundary scopes exactly what gets
+                          // captured when exporting the edited image
+                          // (media + filter + brightness + text/sticker
+                          // overlays) — the play/pause icon below is
+                          // deliberately outside it since that's transient
+                          // UI chrome, not part of the photo/video itself.
+                          RepaintBoundary(
+                            key: _previewBoundaryKey,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                // Media
+                                if (widget.thumbnailBytes != null)
+                                  Positioned.fill(
+                                    child: _withColorEffects(
+                                      Image.memory(
+                                        widget.thumbnailBytes!,
+                                        fit: _fit,
                                       ),
-                                      child: Text(_textOverlays[i].text,
-                                          style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 20,
-                                              fontWeight:
-                                                  FontWeight.w700)),
                                     ),
+                                  ),
+                                // Video on top once ready
+                                if (_isVideo && _videoReady)
+                                  Positioned.fill(
+                                    child: _withColorEffects(
+                                      FittedBox(
+                                        fit: _fit,
+                                        child: SizedBox(
+                                          width: _videoCtrl!.value.size.width,
+                                          height:
+                                              _videoCtrl!.value.size.height,
+                                          child: VideoPlayer(_videoCtrl!),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                // Freehand drawing strokes
+                                if (_strokes.isNotEmpty)
+                                  Positioned.fill(
+                                    child: CustomPaint(
+                                      painter: _DrawPainter(_strokes),
+                                    ),
+                                  ),
+                                // Text / sticker overlays
+                                for (int i = 0; i < _textOverlays.length; i++)
+                                  _buildOverlay(i, boxSize),
+                              ],
                             ),
                           ),
-                        ),
-                    ],
-                  ),
-                ),
+                          // Play/pause icon — UI-only, not part of the export
+                          if (_isVideo && !_playing && !_isDrawing)
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: const BoxDecoration(
+                                color: Colors.black45,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.play_arrow_rounded,
+                                  color: Colors.white, size: 48),
+                            ),
+                          // Drawing-mode controls — UI-only, not exported
+                          if (_isDrawing)
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              right: 8,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: SizedBox(
+                                      height: 32,
+                                      child: ListView(
+                                        scrollDirection: Axis.horizontal,
+                                        children: [
+                                          for (final c in _kTextColors)
+                                            GestureDetector(
+                                              onTap: () => setState(
+                                                  () => _drawColor = c),
+                                              child: Container(
+                                                margin: const EdgeInsets.only(
+                                                    right: 8),
+                                                width: 28,
+                                                height: 28,
+                                                decoration: BoxDecoration(
+                                                  color: c,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: _drawColor == c
+                                                        ? AppColors.primary
+                                                        : Colors.white38,
+                                                    width: _drawColor == c
+                                                        ? 2.5
+                                                        : 1,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.undo_rounded,
+                                        color: Colors.white),
+                                    onPressed: _strokes.isEmpty
+                                        ? null
+                                        : () => setState(
+                                            () => _strokes.removeLast()),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.check_circle,
+                                        color: AppColors.primary),
+                                    onPressed: () =>
+                                        setState(() => _isDrawing = false),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
 
@@ -1142,6 +1475,11 @@ class _EditStepState extends State<_EditStep> {
                     icon: Icons.layers_outlined,
                     label: 'Overlay',
                     onTap: _showOverlayTool,
+                  ),
+                  _EditTool(
+                    icon: Icons.edit_rounded,
+                    label: 'Draw',
+                    onTap: () => setState(() => _isDrawing = true),
                   ),
                   _EditTool(
                     icon: Icons.tune_outlined,
@@ -1205,7 +1543,7 @@ class _EditStepState extends State<_EditStep> {
                   const Spacer(),
                   // Next button
                   FilledButton(
-                    onPressed: widget.onNext,
+                    onPressed: _exporting ? null : _handleNext,
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF0095F6),
                       padding: const EdgeInsets.symmetric(
@@ -1213,11 +1551,18 @@ class _EditStepState extends State<_EditStep> {
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8)),
                     ),
-                    child: const Text(
-                      'Next',
-                      style: TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
+                    child: _exporting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text(
+                            'Next',
+                            style: TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
                   ),
                 ],
               ),
@@ -1240,10 +1585,409 @@ List<double> _brightnessMatrix(double brightness) {
   ];
 }
 
+/// Real per-filter color matrices, indexed the same as `_filterNames`
+/// (Normal, Clarendon, Gingham, Moon, Lark) — approximations of the
+/// named Instagram-style looks, applied for real (not just cosmetic
+/// labels) to both the live preview and the final exported image.
+const List<List<double>> _kFilterMatrices = [
+  // Normal — identity
+  [
+    1, 0, 0, 0, 0,
+    0, 1, 0, 0, 0,
+    0, 0, 1, 0, 0,
+    0, 0, 0, 1, 0,
+  ],
+  // Clarendon — punchier contrast + cooler shadows
+  [
+    1.15, 0, 0, 0, -18,
+    0, 1.12, 0.05, 0, -18,
+    0.05, 0, 1.18, 0, -10,
+    0, 0, 0, 1, 0,
+  ],
+  // Gingham — warm, slightly washed-out/faded
+  [
+    0.95, 0.05, 0.05, 0, 18,
+    0.05, 0.92, 0.05, 0, 14,
+    0.05, 0.05, 0.85, 0, 10,
+    0, 0, 0, 1, 0,
+  ],
+  // Moon — desaturated / black & white with a cool tint
+  [
+    0.35, 0.4, 0.15, 0, 5,
+    0.35, 0.4, 0.15, 0, 5,
+    0.4, 0.45, 0.2, 0, 15,
+    0, 0, 0, 1, 0,
+  ],
+  // Lark — bright, airy, cool-leaning highlights
+  [
+    1.05, 0, 0.05, 0, 8,
+    0, 1.08, 0.05, 0, 8,
+    0, 0.05, 1.1, 0, 4,
+    0, 0, 0, 1, 0,
+  ],
+  // Juno — warm and rich with boosted reds
+  [
+    1.2, -0.05, 0, 0, 6,
+    0, 1.08, 0, 0, 2,
+    0, -0.05, 0.95, 0, 0,
+    0, 0, 0, 1, 0,
+  ],
+  // Ludwig — muted, slightly desaturated with a subtle contrast lift
+  [
+    1.05, 0.02, 0.02, 0, -6,
+    0.02, 1.0, 0.02, 0, -6,
+    0.02, 0.02, 0.95, 0, -6,
+    0, 0, 0, 1, 0,
+  ],
+  // Aden — soft pastel wash, blue-green tint
+  [
+    1.0, 0, 0.08, 0, 20,
+    0.05, 1.0, 0.05, 0, 18,
+    0.05, 0.05, 1.0, 0, 22,
+    0, 0, 0, 1, 0,
+  ],
+  // Valencia — warm vintage glow, lifted shadows
+  [
+    1.15, 0.05, 0, 0, 12,
+    0.05, 1.05, 0, 0, 6,
+    0, 0, 0.9, 0, 4,
+    0, 0, 0, 1, 0,
+  ],
+  // Willow — near-monochrome with a faint lavender cast
+  [
+    0.45, 0.35, 0.2, 0, 20,
+    0.4, 0.4, 0.2, 0, 15,
+    0.45, 0.35, 0.25, 0, 25,
+    0, 0, 0, 1, 0,
+  ],
+  // Mayfair — punchy warm contrast with a soft pink vignette tone
+  [
+    1.18, 0, 0.02, 0, 4,
+    0, 1.1, 0, 0, 0,
+    0.05, 0, 1.05, 0, 6,
+    0, 0, 0, 1, 0,
+  ],
+];
+
+/// A single freehand pen stroke. Points are stored fractionally (0.0–1.0
+/// on each axis), same scheme as `_TextOverlay.position`, so drawings
+/// stay correctly placed regardless of preview size or the RepaintBoundary
+/// capture's pixel ratio.
+class _DrawStroke {
+  _DrawStroke({required this.color});
+  final Color color;
+  final double strokeWidth = 4;
+  final List<Offset> points = [];
+}
+
+class _DrawPainter extends CustomPainter {
+  const _DrawPainter(this.strokes);
+  final List<_DrawStroke> strokes;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final stroke in strokes) {
+      if (stroke.points.length < 2) continue;
+      final paint = Paint()
+        ..color = stroke.color
+        ..strokeWidth = stroke.strokeWidth
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke;
+      final path = Path()
+        ..moveTo(
+          stroke.points.first.dx * size.width,
+          stroke.points.first.dy * size.height,
+        );
+      for (final p in stroke.points.skip(1)) {
+        path.lineTo(p.dx * size.width, p.dy * size.height);
+      }
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DrawPainter oldDelegate) => true;
+}
+
 class _TextOverlay {
+  _TextOverlay({
+    required this.text,
+    this.isSticker = false,
+    this.color = Colors.white,
+    this.hasBackground = false,
+    this.fontIndex = 0,
+    this.textAlign = TextAlign.center,
+    Offset? position,
+  }) : position = position ?? const Offset(0.5, 0.25);
+
   final String text;
   final bool isSticker;
-  _TextOverlay({required this.text, this.isSticker = false});
+  Color color;
+  bool hasBackground;
+  int fontIndex;
+  TextAlign textAlign;
+
+  /// Fractional position (0.0–1.0 on each axis) within the preview —
+  /// resolution-independent, so it captures correctly at any
+  /// RepaintBoundary pixel ratio and survives the preview being resized.
+  Offset position;
+}
+
+/// A curated set of visually distinct looks built from fonts already
+/// bundled with the app (Poppins/Inter) plus a system monospace option —
+/// deliberately not using google_fonts' network font-fetching for a
+/// picker that should feel instant while editing.
+class _TextFontStyle {
+  const _TextFontStyle(this.label, this.fontFamily, this.fontWeight, this.fontStyle);
+  final String label;
+  final String? fontFamily;
+  final FontWeight fontWeight;
+  final FontStyle fontStyle;
+}
+
+const List<_TextFontStyle> _kTextFonts = [
+  _TextFontStyle('Classic', 'Inter', FontWeight.w500, FontStyle.normal),
+  _TextFontStyle('Bold', 'Poppins', FontWeight.w800, FontStyle.normal),
+  _TextFontStyle('Elegant', 'Inter', FontWeight.w400, FontStyle.italic),
+  _TextFontStyle('Strong', 'Poppins', FontWeight.w700, FontStyle.normal),
+  _TextFontStyle('Typewriter', 'monospace', FontWeight.w600, FontStyle.normal),
+];
+
+const List<Color> _kTextColors = [
+  Colors.white,
+  Colors.black,
+  Color(0xFFFF3B30),
+  Color(0xFFFFCC00),
+  Color(0xFF34C759),
+  Color(0xFF007AFF),
+  Color(0xFFAF52DE),
+  Color(0xFFFF2D55),
+];
+
+// ─────────────────────────────────────────────────────────────────
+// Text Styler Sheet — live-previewed color/font/background/alignment
+// controls for a new text overlay.
+// ─────────────────────────────────────────────────────────────────
+
+class _TextStylerSheet extends StatefulWidget {
+  const _TextStylerSheet({required this.controller, required this.onAdd});
+  final TextEditingController controller;
+  final ValueChanged<_TextOverlay> onAdd;
+
+  @override
+  State<_TextStylerSheet> createState() => _TextStylerSheetState();
+}
+
+class _TextStylerSheetState extends State<_TextStylerSheet> {
+  Color _color = Colors.white;
+  bool _hasBackground = false;
+  int _fontIndex = 0;
+  TextAlign _align = TextAlign.center;
+
+  TextStyle get _previewStyle {
+    final font = _kTextFonts[_fontIndex];
+    return TextStyle(
+      color: _color,
+      fontFamily: font.fontFamily,
+      fontWeight: font.fontWeight,
+      fontStyle: font.fontStyle,
+      fontSize: 22,
+    );
+  }
+
+  void _add() {
+    final text = widget.controller.text.trim();
+    if (text.isEmpty) {
+      Navigator.pop(context);
+      return;
+    }
+    widget.onAdd(_TextOverlay(
+      text: text,
+      color: _color,
+      hasBackground: _hasBackground,
+      fontIndex: _fontIndex,
+      textAlign: _align,
+    ));
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        left: 16,
+        right: 16,
+        top: 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Live preview of the text as styled so far
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF111111),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: TextField(
+              controller: widget.controller,
+              autofocus: true,
+              textAlign: _align,
+              style: _previewStyle,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'Add text…',
+                hintStyle: _previewStyle.copyWith(
+                    color: _previewStyle.color?.withValues(alpha: 0.4)),
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Color swatches
+          SizedBox(
+            height: 36,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _kTextColors.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (_, i) {
+                final c = _kTextColors[i];
+                final selected = c == _color;
+                return GestureDetector(
+                  onTap: () => setState(() => _color = c),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: c,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: selected ? AppColors.primary : Colors.white24,
+                        width: selected ? 2.5 : 1,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Font styles
+          SizedBox(
+            height: 34,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _kTextFonts.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final f = _kTextFonts[i];
+                final selected = i == _fontIndex;
+                return GestureDetector(
+                  onTap: () => setState(() => _fontIndex = i),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? AppColors.primary.withValues(alpha: 0.2)
+                          : const Color(0xFF1E1E1E),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: selected ? AppColors.primary : Colors.white12,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      f.label,
+                      style: TextStyle(
+                        color: selected ? AppColors.primary : Colors.white70,
+                        fontFamily: f.fontFamily,
+                        fontWeight: f.fontWeight,
+                        fontStyle: f.fontStyle,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Background toggle + alignment
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => setState(() => _hasBackground = !_hasBackground),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: _hasBackground
+                        ? AppColors.primary.withValues(alpha: 0.2)
+                        : const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color:
+                          _hasBackground ? AppColors.primary : Colors.white12,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.format_color_fill_rounded,
+                          size: 15,
+                          color: _hasBackground
+                              ? AppColors.primary
+                              : Colors.white70),
+                      const SizedBox(width: 5),
+                      Text('Background',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: _hasBackground
+                                  ? AppColors.primary
+                                  : Colors.white70)),
+                    ],
+                  ),
+                ),
+              ),
+              const Spacer(),
+              for (final entry in {
+                TextAlign.left: Icons.format_align_left_rounded,
+                TextAlign.center: Icons.format_align_center_rounded,
+                TextAlign.right: Icons.format_align_right_rounded,
+              }.entries)
+                IconButton(
+                  onPressed: () => setState(() => _align = entry.key),
+                  icon: Icon(
+                    entry.value,
+                    color: _align == entry.key
+                        ? AppColors.primary
+                        : Colors.white38,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          FilledButton(
+            onPressed: _add,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              minimumSize: const Size.fromHeight(44),
+            ),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _EditTool extends StatelessWidget {
@@ -1319,7 +2063,8 @@ class _AudioTrack {
 }
 
 class _AudioPickerSheet extends StatefulWidget {
-  const _AudioPickerSheet();
+  const _AudioPickerSheet({required this.onSelected});
+  final ValueChanged<_AudioTrack> onSelected;
 
   @override
   State<_AudioPickerSheet> createState() => _AudioPickerSheetState();
@@ -1364,29 +2109,6 @@ class _AudioPickerSheetState extends State<_AudioPickerSheet>
     super.dispose();
   }
 
-  // Fallback tracks shown instantly while API loads
-  static final _fallbackForYou = [
-    _AudioTrack(id: 'f1', title: 'Blinding Lights', artist: 'The Weeknd', album: 'After Hours', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/1f/2f/33/1f2f3327-83a5-a6d7-43c7-c7b5c2e83bfe/20UMGIM38660.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/bb/94/fc/bb94fc7a-7b6d-9e15-a0bf-87c3e2bdcfa7/mzaf_15502931167594576430.plus.aac.p.m4a', durationMs: 200040),
-    _AudioTrack(id: 'f2', title: 'As It Was', artist: 'Harry Styles', album: 'Harry\'s House', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music112/v4/23/ed/0e/23ed0e4d-4a6e-3ba2-a1e1-b98079dc0af6/886449990061.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview122/v4/ea/97/44/ea9744da-7f5c-6b93-c79f-2c4e35ee4e0e/mzaf_12373444088091449813.plus.aac.p.m4a', durationMs: 167303),
-    _AudioTrack(id: 'f3', title: 'Flowers', artist: 'Miley Cyrus', album: 'Endless Summer Vacation', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/68/2e/c2/682ec261-de8d-8f76-f3b7-a24ab2b0e36c/196589525406.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/7a/20/ab/7a20ab4d-b5c0-cead-c8e8-d2fbba1f16ec/mzaf_14756451590905478680.plus.aac.p.m4a', durationMs: 200626),
-    _AudioTrack(id: 'f4', title: 'Anti-Hero', artist: 'Taylor Swift', album: 'Midnights', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/bc/93/8a/bc938a66-e540-b337-2c6e-0df37d2e02de/22UMGIM92929.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview112/v4/56/72/80/567280b0-b7d9-84ed-6a0c-ae6dcca7a0ca/mzaf_1152296432419474017.plus.aac.p.m4a', durationMs: 200690),
-    _AudioTrack(id: 'f5', title: 'Cruel Summer', artist: 'Taylor Swift', album: 'Lover', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music123/v4/fc/f4/82/fcf48261-b458-a376-ea49-0de9e4fc5df2/19UMGIM61052.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/92/e6/50/92e65050-5fa9-49bb-eecc-b54c7ee0f36f/mzaf_14836984832580789527.plus.aac.p.m4a', durationMs: 178426),
-    _AudioTrack(id: 'f6', title: 'Levitating', artist: 'Dua Lipa', album: 'Future Nostalgia', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/56/f1/19/56f1195a-b3be-21dc-ab26-ee48c7ad6ef0/20UMGIM11766.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/7b/ba/39/7bba3940-1c39-cc19-b07b-d0be5e93bd1a/mzaf_16700673813977649.plus.aac.p.m4a', durationMs: 203062),
-    _AudioTrack(id: 'f7', title: 'Essence', artist: 'Wizkid ft. Tems', album: 'Made in Lagos', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/7a/91/f6/7a91f614-5a8b-e8c8-afbf-9a2b4f6f95a1/20UMGIM68696.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/2e/e4/e9/2ee4e9a3-3900-a7df-86d1-43e434c75e51/mzaf_9203703024226428498.plus.aac.p.m4a', durationMs: 255735),
-    _AudioTrack(id: 'f8', title: 'Lover', artist: 'Taylor Swift', album: 'Lover', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music123/v4/fc/f4/82/fcf48261-b458-a376-ea49-0de9e4fc5df2/19UMGIM61052.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/48/27/e5/4827e5fe-72f3-5a2e-9ab8-db4f2a11e7e8/mzaf_4961930380688994948.plus.aac.p.m4a', durationMs: 221306),
-  ];
-
-  static final _fallbackTrending = [
-    _AudioTrack(id: 't1', title: 'Calm Down', artist: 'Rema & Selena Gomez', album: 'Rave & Roses Ultra', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/d3/f3/76/d3f376ef-da55-0dce-5cd7-e28cf4b31a59/22UMGIM47023.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview126/v4/16/02/e1/1602e177-dbe3-0f63-dfc5-d8e10f1c5fbe/mzaf_13310658065399988455.plus.aac.p.m4a', durationMs: 239000),
-    _AudioTrack(id: 't2', title: 'Ojuelegba', artist: 'Wizkid', album: 'Sounds From The Other Side', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music60/v4/e5/0b/b6/e50bb6c2-7bce-0248-ad35-6e7e1f6fc71f/source/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/a2/d6/01/a2d601e4-3d1b-a2f6-3b8a-5f2f19cf7bce/mzaf_6869052893891484987.plus.aac.p.m4a', durationMs: 230000),
-    _AudioTrack(id: 't3', title: 'STAY', artist: 'The Kid LAROI & Justin Bieber', album: 'F*CK LOVE 3', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/4c/19/98/4c1998a5-dae6-0bab-a9c4-7e3e1d4d51be/21UMGIM76543.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/57/3d/53/573d5301-cc06-6bdc-33c2-a4c52b17e9fc/mzaf_7723628696429765484.plus.aac.p.m4a', durationMs: 141000),
-    _AudioTrack(id: 't4', title: 'Watermelon Sugar', artist: 'Harry Styles', album: 'Fine Line', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music113/v4/d8/d3/06/d8d306de-a5ee-f023-e0ff-9da858b80b5b/19UMGIM100060.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/54/10/03/54100302-ae91-3f9b-8895-05e3b72e5a7d/mzaf_8619668882038234000.plus.aac.p.m4a', durationMs: 174000),
-    _AudioTrack(id: 't5', title: 'good 4 u', artist: 'Olivia Rodrigo', album: 'SOUR', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/ac/97/47/ac9747f9-c58d-f00f-2df2-6e7a785f2c15/21UMGIM23680.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/68/7b/e0/687be0e8-5e5c-20ec-f18e-a91d4a6d4018/mzaf_3834527660421049621.plus.aac.p.m4a', durationMs: 178000),
-    _AudioTrack(id: 't6', title: 'Electric Touch', artist: 'Taylor Swift ft. Fall Out Boy', album: '1989 (Taylor\'s Version)', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/a4/f9/2e/a4f92ee2-2c74-4eac-1d2f-c19a2b4cf5d5/23UMGIM89215.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/33/45/cd/3345cdd8-15de-7c9e-6680-18741484e558/mzaf_8748124516025989987.plus.aac.p.m4a', durationMs: 231000),
-    _AudioTrack(id: 't7', title: 'Peaches', artist: 'Justin Bieber ft. Daniel Caesar', album: 'Justice', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/2a/30/3b/2a303b28-cf54-2ccd-6b7a-e8c9a087f66c/21UMGIM17219.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/5b/1a/c0/5b1ac051-60f9-5001-49e0-adb9f62fd7ee/mzaf_5793527023052059023.plus.aac.p.m4a', durationMs: 198000),
-    _AudioTrack(id: 't8', title: 'Heat Waves', artist: 'Glass Animals', album: 'Dreamland', artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/27/27/f5/2727f584-9064-93a8-af60-bb3cd2af1428/20UMGIM89513.rgb.jpg/300x300bb.jpg', previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/35/23/b5/3523b559-d80e-b9b5-8ca7-1b6dc29f9571/mzaf_4034268754399019083.plus.aac.p.m4a', durationMs: 238000),
-  ];
-
   Future<List<_AudioTrack>> _itunesSearch(String term,
       {int limit = 20}) async {
     try {
@@ -1418,17 +2140,19 @@ class _AudioPickerSheetState extends State<_AudioPickerSheet>
   }
 
   Future<void> _fetchForYou() async {
-    // Pre-seed immediately with fallback
-    if (mounted) setState(() { _forYou = List.from(_fallbackForYou); _loadingForYou = false; });
-    // Then try to load from API and replace
+    if (mounted) setState(() => _loadingForYou = true);
+    // No pre-seeded fallback data — a previous version showed hardcoded
+    // tracks instantly, but their preview URLs go stale (iTunes CDN links
+    // aren't permanent) and users ended up tapping play on dead links.
+    // Honest loading state instead; empty result shows a retry option.
     final tracks = await _itunesSearch('top hits pop', limit: 25);
-    if (mounted && tracks.isNotEmpty) setState(() => _forYou = tracks);
+    if (mounted) setState(() { _forYou = tracks; _loadingForYou = false; });
   }
 
   Future<void> _fetchTrending() async {
-    if (mounted) setState(() { _trending = List.from(_fallbackTrending); _loadingTrending = false; });
+    if (mounted) setState(() => _loadingTrending = true);
     final tracks = await _itunesSearch('trending afrobeats viral 2024', limit: 25);
-    if (mounted && tracks.isNotEmpty) setState(() => _trending = tracks);
+    if (mounted) setState(() { _trending = tracks; _loadingTrending = false; });
   }
 
   void _onSearchChanged(String q) {
@@ -1470,6 +2194,7 @@ class _AudioPickerSheetState extends State<_AudioPickerSheet>
 
   void _selectTrack(_AudioTrack track) {
     _player.stop();
+    widget.onSelected(track);
     Navigator.pop(context);
   }
 
@@ -1574,23 +2299,27 @@ class _AudioPickerSheetState extends State<_AudioPickerSheet>
                         // For You
                         _loadingForYou
                             ? const Center(child: CircularProgressIndicator())
-                            : _TrackList(
-                                tracks: _forYou,
-                                playingId: _playingId,
-                                onPlay: _togglePlay,
-                                onSave: _toggleSave,
-                                onSelect: _selectTrack,
-                              ),
+                            : _forYou.isEmpty
+                                ? _AudioLoadError(onRetry: _fetchForYou)
+                                : _TrackList(
+                                    tracks: _forYou,
+                                    playingId: _playingId,
+                                    onPlay: _togglePlay,
+                                    onSave: _toggleSave,
+                                    onSelect: _selectTrack,
+                                  ),
                         // Trending
                         _loadingTrending
                             ? const Center(child: CircularProgressIndicator())
-                            : _TrackList(
-                                tracks: _trending,
-                                playingId: _playingId,
-                                onPlay: _togglePlay,
-                                onSave: _toggleSave,
-                                onSelect: _selectTrack,
-                              ),
+                            : _trending.isEmpty
+                                ? _AudioLoadError(onRetry: _fetchTrending)
+                                : _TrackList(
+                                    tracks: _trending,
+                                    playingId: _playingId,
+                                    onPlay: _togglePlay,
+                                    onSave: _toggleSave,
+                                    onSelect: _selectTrack,
+                                  ),
                         // Saved
                         _saved.isEmpty
                             ? const Center(
@@ -1635,6 +2364,32 @@ class _AudioPickerSheetState extends State<_AudioPickerSheet>
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AudioLoadError extends StatelessWidget {
+  const _AudioLoadError({required this.onRetry});
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.wifi_off_rounded, color: Colors.white24, size: 40),
+          const SizedBox(height: 12),
+          const Text("Couldn't load songs",
+              style: TextStyle(color: Colors.white38)),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: onRetry,
+            child: const Text('Retry',
+                style: TextStyle(color: AppColors.primary)),
+          ),
+        ],
       ),
     );
   }
@@ -1773,8 +2528,6 @@ class _ShareStep extends ConsumerWidget {
     required this.captionCtrl,
     required this.locationCtrl,
     required this.audioLabel,
-    required this.aiLabel,
-    required this.onAiLabelChanged,
     required this.onAudioLabelChanged,
     required this.onBack,
     required this.onSubmit,
@@ -1786,12 +2539,41 @@ class _ShareStep extends ConsumerWidget {
   final TextEditingController captionCtrl;
   final TextEditingController locationCtrl;
   final String audioLabel;
-  final bool aiLabel;
-  final ValueChanged<bool> onAiLabelChanged;
   final ValueChanged<String> onAudioLabelChanged;
   final VoidCallback onBack;
   final VoidCallback onSubmit;
   final Future<void> Function() onSaveDraft;
+
+  /// Inserts '#' at the caption's current cursor position and focuses it —
+  /// same behavior as Instagram's "Hashtags" quick-add chip.
+  void _insertHashtag(WidgetRef ref) {
+    final text = captionCtrl.text;
+    final cursor = captionCtrl.selection.start >= 0
+        ? captionCtrl.selection.start
+        : text.length;
+    final newText = text.replaceRange(cursor, cursor, '#');
+    captionCtrl.value = captionCtrl.value.copyWith(
+      text: newText,
+      selection: TextSelection.collapsed(offset: cursor + 1),
+    );
+    ref.read(newPostProvider.notifier).setCaption(newText);
+  }
+
+  void _showTagPeopleSheet(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(newPostProvider.notifier);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF111111),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => _TagPeopleSheet(
+        initiallyTagged: ref.read(newPostProvider).taggedUsers,
+        onAdd: notifier.addTaggedUser,
+        onRemove: notifier.removeTaggedUser,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1883,7 +2665,7 @@ class _ShareStep extends ConsumerWidget {
                   _QuickChip(
                       icon: Icons.tag,
                       label: 'Hashtags',
-                      onTap: () {}),
+                      onTap: () => _insertHashtag(ref)),
                   _QuickChip(
                       icon: Icons.bar_chart_rounded,
                       label: 'Poll',
@@ -1902,7 +2684,10 @@ class _ShareStep extends ConsumerWidget {
             _ShareRow(
               icon: Icons.person_pin_outlined,
               label: 'Tag people',
-              onTap: () {},
+              onTap: () => _showTagPeopleSheet(context, ref),
+              subtitle: post.taggedUsers.isNotEmpty
+                  ? 'with ${post.taggedUsers.map((u) => '@${u.username}').join(', ')}'
+                  : null,
             ),
             const Divider(color: Color(0xFF2A2A2A), height: 1),
 
@@ -2041,8 +2826,9 @@ class _ShareStep extends ConsumerWidget {
                     ),
                   ),
                   Switch(
-                    value: aiLabel,
-                    onChanged: onAiLabelChanged,
+                    value: post.isAiGenerated,
+                    onChanged:
+                        ref.read(newPostProvider.notifier).setAiGenerated,
                     activeThumbColor: AppColors.primary,
                     activeTrackColor: AppColors.primary.withValues(alpha: 0.4),
                   ),
@@ -2321,6 +3107,227 @@ class _HubPickerInline extends StatelessWidget {
             ),
           )
           .toList(),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Tag People Sheet — search + multi-select, mirrors Instagram's
+// "Tag people" picker.
+// ─────────────────────────────────────────────────────────────────
+
+class _TagPeopleSheet extends StatefulWidget {
+  const _TagPeopleSheet({
+    required this.initiallyTagged,
+    required this.onAdd,
+    required this.onRemove,
+  });
+  final List<TaggedUser> initiallyTagged;
+  final ValueChanged<TaggedUser> onAdd;
+  final ValueChanged<String> onRemove;
+
+  @override
+  State<_TagPeopleSheet> createState() => _TagPeopleSheetState();
+}
+
+class _TagPeopleSheetState extends State<_TagPeopleSheet> {
+  final _searchCtrl = TextEditingController();
+  Timer? _debounce;
+  List<Map<String, dynamic>> _results = [];
+  bool _searching = false;
+  late List<TaggedUser> _tagged;
+
+  @override
+  void initState() {
+    super.initState();
+    _tagged = List.from(widget.initiallyTagged);
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String q) {
+    _debounce?.cancel();
+    if (q.trim().isEmpty) {
+      setState(() => _results = []);
+      return;
+    }
+    setState(() => _searching = true);
+    _debounce = Timer(const Duration(milliseconds: 400), () async {
+      final results =
+          await PostRepository.instance.searchUsersForTagging(q.trim());
+      if (mounted) setState(() { _results = results; _searching = false; });
+    });
+  }
+
+  void _toggle(Map<String, dynamic> user) {
+    final id = user['id'] as String;
+    final already = _tagged.any((u) => u.id == id);
+    setState(() {
+      if (already) {
+        _tagged.removeWhere((u) => u.id == id);
+        widget.onRemove(id);
+      } else {
+        final tagged = TaggedUser(
+          id: id,
+          username: user['username'] as String? ?? '',
+          fullName: user['full_name'] as String?,
+          avatarUrl: user['avatar_url'] as String?,
+        );
+        _tagged.add(tagged);
+        widget.onAdd(tagged);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (_, scrollCtrl) => Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 36, height: 4,
+            decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2)),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const SizedBox(width: 60),
+                const Text('Tag people',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700)),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done',
+                      style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ),
+          if (_tagged.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: SizedBox(
+                height: 32,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  itemCount: _tagged.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, i) {
+                    final t = _tagged[i];
+                    return Chip(
+                      backgroundColor: const Color(0xFF2A2A2A),
+                      label: Text('@${t.username}',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 12)),
+                      deleteIconColor: Colors.white54,
+                      onDeleted: () => _toggle({'id': t.id}),
+                    );
+                  },
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: TextField(
+              controller: _searchCtrl,
+              autofocus: true,
+              onChanged: _onSearchChanged,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Search for people',
+                hintStyle: const TextStyle(color: Colors.white38),
+                prefixIcon: const Icon(Icons.search, color: Colors.white38),
+                filled: true,
+                fillColor: const Color(0xFF2A2A2A),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _searching
+                ? const Center(child: CircularProgressIndicator())
+                : _results.isEmpty
+                    ? Center(
+                        child: Text(
+                          _searchCtrl.text.trim().isEmpty
+                              ? 'Search by username or name'
+                              : 'No users found',
+                          style: const TextStyle(color: Colors.white38),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollCtrl,
+                        itemCount: _results.length,
+                        itemBuilder: (_, i) {
+                          final u = _results[i];
+                          final id = u['id'] as String;
+                          final isTagged = _tagged.any((t) => t.id == id);
+                          final avatarUrl = u['avatar_url'] as String?;
+                          return ListTile(
+                            leading: CircleAvatar(
+                              radius: 20,
+                              backgroundColor: const Color(0xFF2A2A2A),
+                              backgroundImage: (avatarUrl != null &&
+                                      avatarUrl.isNotEmpty)
+                                  ? NetworkImage(avatarUrl)
+                                  : null,
+                              child: (avatarUrl == null || avatarUrl.isEmpty)
+                                  ? const Icon(Icons.person,
+                                      color: Colors.white38)
+                                  : null,
+                            ),
+                            title: Text(
+                              u['username'] as String? ?? '',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: (u['full_name'] as String?)
+                                        ?.isNotEmpty ==
+                                    true
+                                ? Text(u['full_name'] as String,
+                                    style: const TextStyle(
+                                        color: Colors.white38, fontSize: 12))
+                                : null,
+                            trailing: Icon(
+                              isTagged
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                              color: isTagged
+                                  ? AppColors.primary
+                                  : Colors.white24,
+                            ),
+                            onTap: () => _toggle(u),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
     );
   }
 }

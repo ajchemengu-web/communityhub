@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build/
+
+# Supabase CLI local state
+supabase/.temp/
+
+# Local devtools/analyzer scratch files
+devtools_options.yaml
+flutter_analyze_output.txt

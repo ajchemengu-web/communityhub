@@ -162,7 +162,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     state: state,
                     uid: _uid,
                     onTap: (id) => context.push('/post/$id'),
-                    onNewPost: () => context.push(AppRoutes.newPost),
                   ),
 
                   // ── Videos tab ─────────────────────────────
@@ -171,7 +170,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     uid: _uid,
                     filterVideo: true,
                     onTap: (id) => context.push('/post/$id'),
-                    onNewPost: () => context.push(AppRoutes.newPost),
                   ),
 
                   // ── Reposts ────────────────────────────────
@@ -223,7 +221,7 @@ class _TopBar extends StatelessWidget {
           else
             IconButton(
               icon: const Icon(Icons.add_box_outlined, color: Colors.white, size: 26),
-              onPressed: () => context.push(AppRoutes.cameraRecorder),
+              onPressed: () => context.push('/story/create'),
             ),
 
           // Center: username + chevron
@@ -957,13 +955,11 @@ class _PostsGrid extends ConsumerWidget {
     required this.state,
     required this.uid,
     required this.onTap,
-    required this.onNewPost,
     this.filterVideo = false,
   });
   final ProfileState state;
   final String uid;
   final ValueChanged<String> onTap;
-  final VoidCallback onNewPost;
   final bool filterVideo;
 
   @override
@@ -1015,25 +1011,6 @@ class _PostsGrid extends ConsumerWidget {
                   fontSize: 15,
                   fontWeight: FontWeight.w500),
             ),
-            if (state.isOwnProfile && !filterVideo) ...[
-              const SizedBox(height: 14),
-              GestureDetector(
-                onTap: onNewPost,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text('Create your first post',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ],
           ],
         ),
       );

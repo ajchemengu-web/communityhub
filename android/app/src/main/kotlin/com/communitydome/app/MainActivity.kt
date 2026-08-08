@@ -1,4 +1,4 @@
-package com.example.communitydome
+package com.communitydome.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -22,7 +22,7 @@ if (hasReleaseSigning) {
 }
 
 android {
-    namespace = "com.example.communitydome"
+    namespace = "com.communitydome.app"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -33,8 +33,13 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.communitydome"
+        // Changed from the default "com.example.communitydome" — Play
+        // Console blocks any com.example.* package name outright. This
+        // requires a matching update to android/app/google-services.json
+        // (register a new Android app under this package name in the
+        // Firebase console) and to the release SHA-1 registered for
+        // Google Sign-In — see PLAY_STORE_DEPLOYMENT.md.
+        applicationId = "com.communitydome.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

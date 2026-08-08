@@ -148,10 +148,11 @@ class FeedRepository {
         final postIds = rows.map((r) => r['id'] as String).toList();
         final results = await Future.wait([
           _db
-              .from('post_likes')
-              .select('post_id')
+              .from('likes')
+              .select('target_id')
               .eq('user_id', uid)
-              .inFilter('post_id', postIds) as Future<dynamic>,
+              .eq('target_type', 'post')
+              .inFilter('target_id', postIds) as Future<dynamic>,
           _db
               .from('bookmarks')
               .select('post_id')
@@ -159,7 +160,7 @@ class FeedRepository {
               .inFilter('post_id', postIds) as Future<dynamic>,
         ]);
         likedIds = (results[0] as List<dynamic>)
-            .map((r) => r['post_id'] as String)
+            .map((r) => r['target_id'] as String)
             .toSet();
         bookmarkedIds = (results[1] as List<dynamic>)
             .map((r) => r['post_id'] as String)
@@ -435,16 +436,19 @@ class FeedRepository {
       if (isCurrentlyLiked) {
         // Unlike: delete the row
         await _db
-            .from('post_likes')
+            .from('likes')
             .delete()
-            .eq('post_id', postId)
+            .eq('target_id', postId)
+            .eq('target_type', 'post')
             .eq('user_id', uid);
       } else {
-        // Like: insert a row (ON CONFLICT DO NOTHING is handled by DB constraint)
-        await _db.from('post_likes').upsert({
-          'post_id': postId,
+        // Like: insert a row (unique constraint on user_id+target_id+target_type
+        // makes this idempotent under race/double-tap)
+        await _db.from('likes').upsert({
+          'target_id': postId,
+          'target_type': 'post',
           'user_id': uid,
-        });
+        }, onConflict: 'user_id,target_id,target_type');
       }
 
       // Fetch the current like count from the post row

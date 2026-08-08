@@ -208,9 +208,10 @@ class PostRepository {
     bool isLiked = false;
     if (uid != null) {
       final likeRow = await _db
-          .from('post_likes')
+          .from('likes')
           .select('id')
-          .eq('post_id', postId)
+          .eq('target_id', postId)
+          .eq('target_type', 'post')
           .eq('user_id', uid)
           .maybeSingle();
       isLiked = likeRow != null;

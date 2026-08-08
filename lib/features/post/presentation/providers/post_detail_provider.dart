@@ -130,14 +130,17 @@ class PostDetailNotifier extends StateNotifier<PostDetailState> {
       if (uid == null) return;
       if (wasLiked) {
         await SupabaseService.client
-            .from('post_likes')
+            .from('likes')
             .delete()
-            .eq('post_id', postId)
+            .eq('target_id', postId)
+            .eq('target_type', 'post')
             .eq('user_id', uid);
       } else {
-        await SupabaseService.client
-            .from('post_likes')
-            .upsert({'post_id': postId, 'user_id': uid});
+        await SupabaseService.client.from('likes').upsert({
+          'target_id': postId,
+          'target_type': 'post',
+          'user_id': uid,
+        }, onConflict: 'user_id,target_id,target_type');
       }
     } catch (_) {
       // revert

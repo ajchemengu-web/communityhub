@@ -93,12 +93,13 @@ class CommunityDetailNotifier
       if (currentUid != null && postSlice.isNotEmpty) {
         final ids = postSlice.map((r) => r['id'] as String).toList();
         final liked = await SupabaseService.client
-            .from('post_likes')
-            .select('post_id')
+            .from('likes')
+            .select('target_id')
             .eq('user_id', currentUid)
-            .inFilter('post_id', ids) as List<dynamic>;
+            .eq('target_type', 'post')
+            .inFilter('target_id', ids) as List<dynamic>;
         likedIds =
-            liked.map((r) => r['post_id'] as String).toSet();
+            liked.map((r) => r['target_id'] as String).toSet();
       }
 
       final posts = postSlice.map((r) {

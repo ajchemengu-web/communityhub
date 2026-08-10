@@ -1,7 +1,9 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/data/quran_surahs.dart';
+import '../../data/quran_audio_repository.dart';
 
 class QuranScreen extends StatefulWidget {
   const QuranScreen({super.key});
@@ -183,6 +185,9 @@ class _SurahList extends StatelessWidget {
   }
 }
 
+/// Which audio track is currently loaded in the surah detail player.
+enum _QuranAudioSegment { arabic, swahili }
+
 class _SurahDetailScreen extends StatefulWidget {
   const _SurahDetailScreen({required this.surah});
   final QuranSurah surah;
@@ -197,10 +202,66 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
   bool _loading = true;
   String? _error;
 
+  // --- Audio (Arabic recitation + Swahili translation narration) ---
+  final _player = AudioPlayer();
+  List<ReciterModel> _reciters = QuranAudioRepository.fallbackReciters;
+  ReciterModel _reciter = QuranAudioRepository.fallbackReciters.first;
+  _QuranAudioSegment? _segment;
+  bool _sequential = true; // auto-advance Arabic -> Swahili
+  PlayerState _playerState = PlayerState.stopped;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  bool _audioBusy = false;
+  String? _audioError;
+
   @override
   void initState() {
     super.initState();
     _fetch();
+    _loadReciters();
+
+    // Keep the native player "warm" between the recitation and translation
+    // tracks instead of fully tearing it down on completion (the default
+    // ReleaseMode.release). Releasing and immediately re-playing a new
+    // source back-to-back — exactly what the auto Arabic-to-Kiswahili
+    // chain does — races the platform player's teardown and throws, which
+    // otherwise surfaces as a spurious "check your internet connection"
+    // error even though the network is fine.
+    _player.setReleaseMode(ReleaseMode.stop);
+
+    _player.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
+      setState(() => _playerState = state);
+    });
+    _player.onPositionChanged.listen((pos) {
+      if (!mounted) return;
+      setState(() => _position = pos);
+    });
+    _player.onDurationChanged.listen((dur) {
+      if (!mounted) return;
+      setState(() => _duration = dur);
+    });
+    _player.onPlayerComplete.listen((_) {
+      if (!mounted) return;
+      if (_sequential && _segment == _QuranAudioSegment.arabic) {
+        _playSegment(_QuranAudioSegment.swahili);
+      } else {
+        setState(() {
+          _segment = null;
+          _position = Duration.zero;
+        });
+      }
+    });
+  }
+
+  Future<void> _loadReciters() async {
+    final reciters = await QuranAudioRepository.instance.fetchReciters();
+    if (!mounted) return;
+    setState(() {
+      _reciters = reciters;
+      final match = reciters.where((r) => r.id == _reciter.id);
+      _reciter = match.isNotEmpty ? match.first : reciters.first;
+    });
   }
 
   Future<void> _fetch() async {
@@ -231,6 +292,269 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _playSegment(_QuranAudioSegment segment) async {
+    final url = segment == _QuranAudioSegment.arabic
+        ? QuranAudioRepository.instance
+            .arabicSurahAudioUrl(_reciter, widget.surah.number)
+        : QuranAudioRepository.instance
+            .swahiliTranslationAudioUrl(widget.surah.number);
+    setState(() {
+      _segment = segment;
+      _audioBusy = true;
+      _audioError = null;
+      _position = Duration.zero;
+      _duration = Duration.zero;
+    });
+    try {
+      // Defensively stop any in-flight/just-completed playback before
+      // starting the next track — switching sources on a still-settling
+      // player is what triggers the auto-chain failure (see initState).
+      try {
+        await _player.stop();
+      } catch (_) {
+        // Nothing was playing — fine to ignore.
+      }
+      await _player.play(UrlSource(url));
+    } catch (e) {
+      debugPrint('Quran audio playback error ($segment, surah ${widget.surah.number}): $e');
+      if (!mounted) return;
+      setState(() {
+        _audioError = 'Could not play audio. Check your internet connection.';
+      });
+    } finally {
+      if (mounted) setState(() => _audioBusy = false);
+    }
+  }
+
+  Future<void> _togglePlayPause() async {
+    if (_segment == null) {
+      await _playSegment(_QuranAudioSegment.arabic);
+      return;
+    }
+    if (_playerState == PlayerState.playing) {
+      await _player.pause();
+    } else {
+      await _player.resume();
+    }
+  }
+
+  Future<void> _stopAudio() async {
+    await _player.stop();
+    if (!mounted) return;
+    setState(() {
+      _segment = null;
+      _position = Duration.zero;
+    });
+  }
+
+  void _pickReciter() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0F2040),
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('Choose reciter',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+            ),
+            ..._reciters.map((r) {
+              return ListTile(
+                title:
+                    Text(r.name, style: const TextStyle(color: Colors.white)),
+                trailing: r.id == _reciter.id
+                    ? const Icon(Icons.check, color: Color(0xFF4CAF50))
+                    : null,
+                onTap: () {
+                  Navigator.pop(context);
+                  final wasPlayingArabic = _segment == _QuranAudioSegment.arabic;
+                  setState(() => _reciter = r);
+                  if (wasPlayingArabic) {
+                    _playSegment(_QuranAudioSegment.arabic);
+                  }
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  /// Single entry point: always plays the Arabic recitation first, then
+  /// (per [_sequential], which stays on) auto-continues straight into the
+  /// Kiswahili translation of the same surah — one continuous playback
+  /// rather than two separate tracks the user has to start by hand.
+  Widget _buildAudioQuickActions() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () => _playSegment(_QuranAudioSegment.arabic),
+              icon: const Icon(Icons.play_arrow_rounded, size: 22),
+              label: const Text('Play Recitation + Kiswahili'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: _pickReciter,
+            icon: const Icon(Icons.person_outline, color: Colors.white38),
+            tooltip: 'Choose reciter',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAudioPlayerBar() {
+    final isArabic = _segment == _QuranAudioSegment.arabic;
+    final label =
+        isArabic ? '${_reciter.name} · Recitation' : 'Kiswahili Translation';
+    final totalMs = _duration.inMilliseconds > 0 ? _duration.inMilliseconds : 1;
+    final posMs = _position.inMilliseconds.clamp(0, totalMs);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0F2040),
+        border: Border(top: BorderSide(color: Color(0xFF1A6B4A), width: 1)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_audioError != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(_audioError!,
+                    style:
+                        const TextStyle(color: Colors.redAccent, fontSize: 11)),
+              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(label,
+                      style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis),
+                ),
+                Text('${_fmt(_position)} / ${_fmt(_duration)}',
+                    style: const TextStyle(color: Colors.white38, fontSize: 11)),
+              ],
+            ),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 2,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              ),
+              child: Slider(
+                value: posMs.toDouble(),
+                max: totalMs.toDouble(),
+                activeColor: const Color(0xFF4CAF50),
+                inactiveColor: Colors.white12,
+                onChanged: (v) =>
+                    _player.seek(Duration(milliseconds: v.toInt())),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  onPressed: () => _playSegment(_QuranAudioSegment.arabic),
+                  icon: Icon(Icons.mic,
+                      color:
+                          isArabic ? const Color(0xFF4CAF50) : Colors.white38),
+                  tooltip: 'Jump to Arabic recitation',
+                ),
+                IconButton(
+                  iconSize: 40,
+                  onPressed: _audioBusy ? null : _togglePlayPause,
+                  icon: _audioBusy
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Color(0xFF4CAF50)),
+                        )
+                      : Icon(
+                          _playerState == PlayerState.playing
+                              ? Icons.pause_circle_filled
+                              : Icons.play_circle_filled,
+                          color: const Color(0xFF4CAF50)),
+                ),
+                IconButton(
+                  onPressed: _stopAudio,
+                  icon: const Icon(Icons.stop_circle_outlined,
+                      color: Colors.white38),
+                  tooltip: 'Stop',
+                ),
+                IconButton(
+                  onPressed: () => _playSegment(_QuranAudioSegment.swahili),
+                  icon: Icon(Icons.translate,
+                      color:
+                          !isArabic ? const Color(0xFF4CAF50) : Colors.white38),
+                  tooltip: 'Jump to Kiswahili translation',
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text(
+                isArabic
+                    ? 'Kiswahili translation plays automatically next'
+                    : 'Playing Kiswahili translation',
+                style: const TextStyle(
+                    color: Color(0xFF4CAF50),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: Text(
+                QuranAudioRepository.swahiliTranslationLicenseNote,
+                style: TextStyle(color: Colors.white24, fontSize: 9),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -295,6 +619,9 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                   slivers: [
                     SliverToBoxAdapter(
                       child: _SurahHeader(surah: surah),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildAudioQuickActions(),
                     ),
                     SliverPadding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -378,6 +705,7 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                     ),
                   ],
                 ),
+      bottomNavigationBar: _segment == null ? null : _buildAudioPlayerBar(),
     );
   }
 }

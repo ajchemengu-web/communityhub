@@ -193,13 +193,17 @@ class _HomeAppBar extends SliverAppBar {
       children: [
         const Icon(Icons.hub_rounded, color: AppColors.secondary, size: 22),
         const SizedBox(width: 6),
-        Text(
-          'CommunityHub',
-          style: AppTextStyles.titleMedium.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
+        Flexible(
+          child: Text(
+            AppConstants.appName,
+            style: AppTextStyles.titleMedium.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
           ),
-          overflow: TextOverflow.ellipsis,
         ),
       ],
     ),

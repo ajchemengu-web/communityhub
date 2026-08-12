@@ -94,3 +94,16 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
+
+// flutter_stripe (via its native :stripe_android module) pulls in Stripe's
+// card-issuing push-provisioning SDK, which in turn depends on
+// com.google.android.gms:play-services-tapandpay — a Google Pay Issuer API
+// artifact that requires separate Google approval and isn't resolvable from
+// any repo this project has configured. We don't use Stripe Issuing /
+// add-to-Google-Pay-wallet features (this app takes regular payments only),
+// so exclude the dependency outright rather than fighting to resolve it.
+// The -dontwarn rules in proguard-rules.pro handle the resulting R8
+// "missing classes" warnings for the same reason.
+configurations.all {
+    exclude(group = "com.stripe", module = "stripe-android-issuing-push-provisioning")
+}

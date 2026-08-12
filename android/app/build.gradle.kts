@@ -70,6 +70,13 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            // Extra R8 keep/dontwarn rules on top of Flutter's own defaults —
+            // currently just the flutter_stripe push-provisioning classes
+            // that R8 flagged as missing (see proguard-rules.pro for why).
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

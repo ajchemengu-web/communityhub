@@ -264,46 +264,68 @@ class _LiveViewerScreenState extends ConsumerState<LiveViewerScreen> {
           Positioned.fill(
             child: _remoteVideoTrack != null
                 ? lk.VideoTrackRenderer(_remoteVideoTrack!)
+                // This placeholder used to be `Center(child: Column(...))`
+                // with no bound on the available height. Whatever squeezes
+                // that height — the keyboard (should no longer happen now
+                // that resizeToAvoidBottomInset is false above, but we
+                // don't want to depend on that alone), a very long host
+                // name/title wrapping to extra lines, a small-screen
+                // device — used to throw a RenderFlex "bottom overflowed"
+                // error instead of degrading gracefully. Wrapping in
+                // SingleChildScrollView means it centers normally when it
+                // fits, and simply becomes scrollable instead of
+                // overflowing when it doesn't; the maxLines/overflow on
+                // the text below caps the other failure mode (a title so
+                // long it alone blows the available height).
                 : Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircleAvatar(
-                          radius: 40,
-                          backgroundImage: stream.hostAvatar != null
-                              ? NetworkImage(stream.hostAvatar!)
-                              : null,
-                          backgroundColor: AppColors.primary.withValues(alpha: 0.3),
-                          child: stream.hostAvatar == null
-                              ? const Icon(Icons.person, color: Colors.white, size: 40)
-                              : null,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(stream.hostName,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 8),
-                        Text(stream.title,
-                            style: const TextStyle(color: Colors.white70, fontSize: 14)),
-                        const SizedBox(height: 24),
-                        if (_isConnecting)
-                          const CircularProgressIndicator()
-                        else if (_error != null)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
-                            child: Text(_error!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.white38, fontSize: 13)),
-                          )
-                        else ...[
-                          const Icon(Icons.live_tv_rounded, color: Colors.white24, size: 48),
-                          const SizedBox(height: 12),
-                          const Text('Waiting for host video…',
-                              style: TextStyle(color: Colors.white38, fontSize: 13)),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircleAvatar(
+                            radius: 40,
+                            backgroundImage: stream.hostAvatar != null
+                                ? NetworkImage(stream.hostAvatar!)
+                                : null,
+                            backgroundColor: AppColors.primary.withValues(alpha: 0.3),
+                            child: stream.hostAvatar == null
+                                ? const Icon(Icons.person, color: Colors.white, size: 40)
+                                : null,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(stream.hostName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 8),
+                          Text(stream.title,
+                              maxLines: 2,
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                          const SizedBox(height: 24),
+                          if (_isConnecting)
+                            const CircularProgressIndicator()
+                          else if (_error != null)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 24),
+                              child: Text(_error!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(color: Colors.white38, fontSize: 13)),
+                            )
+                          else ...[
+                            const Icon(Icons.live_tv_rounded, color: Colors.white24, size: 48),
+                            const SizedBox(height: 12),
+                            const Text('Waiting for host video…',
+                                style: TextStyle(color: Colors.white38, fontSize: 13)),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
           ),

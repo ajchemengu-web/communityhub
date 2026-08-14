@@ -361,6 +361,21 @@ class ChatRepository {
     return CallModel.fromMap(row);
   }
 
+  /// Fetches a LiveKit access token scoped to this specific call. Minted
+  /// server-side by the `livekit-call-token` Edge Function, which looks
+  /// up [callId] with a service-role client and rejects the request
+  /// unless the caller is actually the call's caller_id or receiver_id —
+  /// unlike the live-streaming feature's `livekit-generate-token`
+  /// (any authenticated user, any room name — correct for a public
+  /// stream audience, wrong for a private 1:1 call), this can't be used
+  /// to join someone else's call.
+  Future<String> fetchLiveKitCallToken(String callId) async {
+    final res = await SupabaseService.client.functions
+        .invoke('livekit-call-token', body: {'callId': callId});
+    final data = res.data as Map<String, dynamic>;
+    return data['token'] as String;
+  }
+
   // ── Helpers ───────────────────────────────────────────────
 
   static String _typeToString(MessageType t) {

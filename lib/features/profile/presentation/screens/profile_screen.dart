@@ -122,10 +122,49 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   ),
                 ),
 
-                // ── Creator dashboard (own profile) ───────────
+                // ── Portfolio + shop (own profile), portfolio link
+                // (everyone else's) ────────────────────────────
+                //
+                // This replaces the old "Professional dashboard" bar --
+                // see _ProfessionalDashboard/_DashboardScreen/_StatCard
+                // below, left in place but unlinked from the UI rather
+                // than deleted, same pattern used elsewhere in this app
+                // for reversible feature removal.
                 if (state.isOwnProfile)
                   SliverToBoxAdapter(
-                    child: _ProfessionalDashboard(uid: _uid),
+                    child: Column(
+                      children: [
+                        _PortfolioBar(
+                          icon: Icons.badge_outlined,
+                          title: 'Make / View Portfolio',
+                          subtitle:
+                              'Create or edit your professional portfolio',
+                          onTap: () => context.push(AppRoutes.myPortfolio),
+                        ),
+                        _PortfolioBar(
+                          icon: Icons.storefront_rounded,
+                          title: 'My Shop',
+                          subtitle:
+                              'Set up your storefront and list items for sale',
+                          onTap: () => context.push(AppRoutes.manageShop),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  SliverToBoxAdapter(
+                    child: _PortfolioBar(
+                      icon: Icons.badge_outlined,
+                      title: 'Portfolio',
+                      subtitle: username.isNotEmpty
+                          ? "View $username's professional portfolio"
+                          : 'View their professional portfolio',
+                      // Always shown -- PortfolioScreen itself renders the
+                      // "hasn't published a portfolio yet" empty state
+                      // when there's nothing to view, so this never needs
+                      // to know in advance whether one exists.
+                      onTap: () => context.push('/portfolio/$_uid'),
+                    ),
                   ),
 
                 // ── Tab bar ────────────────────────────────────
@@ -687,6 +726,77 @@ class _ActionBtn extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────
 // Professional dashboard (TikTok-style banner)
+// ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// Portfolio / shop entry-point bar (Professional-dashboard-style row)
+// ─────────────────────────────────────────────────────────────────
+
+class _PortfolioBar extends StatelessWidget {
+  const _PortfolioBar({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111111),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white70, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white60, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Old "Professional dashboard" bar -- no longer linked from the UI
+// (replaced above by _PortfolioBar / the Portfolio+Shop entry points),
+// left in place rather than deleted in case it's wanted back later.
+// To re-enable: swap a _PortfolioBar back out for
+// `_ProfessionalDashboard(uid: _uid)` in the own-profile branch above.
 // ─────────────────────────────────────────────────────────────────
 
 class _ProfessionalDashboard extends ConsumerStatefulWidget {

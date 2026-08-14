@@ -70,6 +70,14 @@ abstract class AppRoutes {
   static const String productDetail = '/marketplace/:productId';
   static const String sellerOrders = '/marketplace/orders';
 
+  // ── Shops ─────────────────────────────────────────────────
+  static const String manageShop = '/shop/manage';
+  static const String shop = '/shop/:ownerId';
+
+  // ── Portfolio (Profolio integration) ───────────────────────
+  static const String myPortfolio = '/portfolio';
+  static const String viewPortfolio = '/portfolio/:userId';
+
   // ── Memberships ───────────────────────────────────────────
   static const String tierPicker = '/community/:communityId/memberships';
   static const String mySubscriptions = '/memberships';

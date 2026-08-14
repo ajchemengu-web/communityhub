@@ -10,7 +10,6 @@ import '../../../ads/presentation/widgets/native_ad_card.dart';
 import '../widgets/feed_post_card.dart';
 import '../widgets/youtube_video_card.dart';
 import '../providers/feed_provider.dart';
-import '../../../notifications/presentation/providers/notifications_provider.dart';
 
 // ── Tab definitions ────────────────────────────────────────────
 class _HubTab {
@@ -109,7 +108,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final unreadCount = ref.watch(unreadNotificationsCountProvider);
     final tabIdx = _tabController.index;
     final currentTab = _tabs[tabIdx];
     final hasSubFilters = currentTab.subHubs.isNotEmpty;
@@ -119,10 +117,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       body: NestedScrollView(
         headerSliverBuilder: (ctx, _) => [
           _HomeAppBar(
-            hasUnread: unreadCount > 0,
-            onNotificationTap: () => context.go(AppRoutes.notifications),
             onSearchTap: () => context.go(AppRoutes.search),
             onCommunitiesTap: () => context.go(AppRoutes.communities),
+            onMarketplaceTap: () => context.push(AppRoutes.marketplace),
+            onPortfolioTap: () => context.push(AppRoutes.myPortfolio),
           ),
           SliverPersistentHeader(
             pinned: true,
@@ -167,12 +165,19 @@ class _FeedTabWrapper extends StatelessWidget {
 }
 
 // ── App Bar ────────────────────────────────────────────────────
+// Icon-only row (no wordmark — the app icon alone anchors the brand and
+// frees up room for the marketplace/portfolio entry points):
+// communities · marketplace · app icon · portfolio · search.
+// Built as a single full-width Row in `title` (leading/actions left
+// empty) rather than SliverAppBar's leading+actions slots, so the exact
+// left-to-right order above is guaranteed instead of being at the mercy
+// of how those slots happen to lay out.
 class _HomeAppBar extends SliverAppBar {
   _HomeAppBar({
-    required bool hasUnread,
-    required VoidCallback onNotificationTap,
     required VoidCallback onSearchTap,
     required VoidCallback onCommunitiesTap,
+    required VoidCallback onMarketplaceTap,
+    required VoidCallback onPortfolioTap,
   }) : super(
     backgroundColor: AppColors.darkBackground,
     floating: true,
@@ -180,62 +185,49 @@ class _HomeAppBar extends SliverAppBar {
     elevation: 0,
     scrolledUnderElevation: 0,
     toolbarHeight: 56,
-    leading: IconButton(
-      icon: const Icon(Icons.groups_2_rounded, color: Colors.white70, size: 26),
-      tooltip: 'Communities',
-      onPressed: onCommunitiesTap,
-    ),
+    automaticallyImplyLeading: false,
+    titleSpacing: 12,
     title: Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Icon(Icons.hub_rounded, color: AppColors.secondary, size: 22),
-        const SizedBox(width: 6),
-        Text(
-          'CommunityHub',
-          style: AppTextStyles.titleMedium.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
+        IconButton(
+          icon: const Icon(Icons.groups_2_rounded, color: Colors.white70, size: 26),
+          tooltip: 'Communities',
+          onPressed: onCommunitiesTap,
+          padding: EdgeInsets.zero,
+        ),
+        IconButton(
+          icon: const Icon(Icons.storefront_rounded, color: Colors.white70, size: 25),
+          tooltip: 'Marketplace',
+          onPressed: onMarketplaceTap,
+          padding: EdgeInsets.zero,
+        ),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.asset(
+            'assets/icons/app_icon.png',
+            width: 30,
+            height: 30,
           ),
-          overflow: TextOverflow.ellipsis,
+        ),
+        IconButton(
+          icon: const Icon(Icons.badge_outlined, color: Colors.white70, size: 25),
+          tooltip: 'Portfolio',
+          onPressed: onPortfolioTap,
+          padding: EdgeInsets.zero,
+        ),
+        IconButton(
+          icon: const Icon(Icons.search_rounded, color: Colors.white70, size: 24),
+          onPressed: onSearchTap,
+          tooltip: 'Search',
+          padding: EdgeInsets.zero,
         ),
       ],
     ),
-    actions: [
-      // "Go Live" entry point removed along with the live-streaming
-      // feature — see LiveStreamsRow removal below for the other half.
-      // Live streaming's UI/models/repository still exist under
-      // lib/features/live/ so this can be turned back on later; nothing
-      // in that feature was deleted, just unlinked from the nav.
-      IconButton(
-        icon: const Icon(Icons.search_rounded, color: Colors.white70, size: 24),
-        onPressed: onSearchTap,
-        tooltip: 'Search',
-      ),
-      Stack(
-        alignment: Alignment.center,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none_rounded, color: Colors.white70, size: 24),
-            onPressed: onNotificationTap,
-            tooltip: 'Notifications',
-          ),
-          if (hasUnread)
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: AppColors.error,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-        ],
-      ),
-      const SizedBox(width: 4),
-    ],
+    // Notifications bell removed from the top app bar — it's duplicated
+    // with the bell already in the bottom nav bar (main_shell.dart).
+    // "Go Live" removed along with the live-streaming feature (still
+    // present under lib/features/live/, just unlinked from nav).
     bottom: const PreferredSize(
       preferredSize: Size.fromHeight(0),
       child: Divider(height: 0, color: AppColors.darkBorder),

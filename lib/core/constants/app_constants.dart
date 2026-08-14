@@ -362,4 +362,5 @@ abstract class AppConstants {
   static const String bucketChatMedia = 'chat_media';
   static const String bucketCommunityCovers = 'community_covers';
   static const String bucketProductImages = 'product_images';
+  static const String bucketShopImages = 'shop_images';
 }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/marketplace_repository.dart';
 import '../../domain/models/order_model.dart';
 import '../../domain/models/product_model.dart';
+import '../../domain/models/shop_model.dart';
 
 // ── Marketplace listing state ───────────────────────────────────────
 
@@ -11,21 +12,32 @@ class MarketplaceState {
     this.products = const [],
     this.isLoading = true,
     this.errorMessage,
+    this.category,
+    this.search = '',
   });
 
   final List<ProductModel> products;
   final bool isLoading;
   final String? errorMessage;
 
+  /// Null = the "All" category tab.
+  final ProductType? category;
+  final String search;
+
   MarketplaceState copyWith({
     List<ProductModel>? products,
     bool? isLoading,
     String? errorMessage,
+    ProductType? category,
+    bool clearCategory = false,
+    String? search,
   }) =>
       MarketplaceState(
         products: products ?? this.products,
         isLoading: isLoading ?? this.isLoading,
         errorMessage: errorMessage ?? this.errorMessage,
+        category: clearCategory ? null : (category ?? this.category),
+        search: search ?? this.search,
       );
 }
 
@@ -39,11 +51,26 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
   Future<void> refresh() async {
     state = state.copyWith(isLoading: true);
     try {
-      final products = await _repo.fetchProducts();
+      final products = await _repo.fetchProducts(
+        type: state.category,
+        search: state.search,
+      );
       state = state.copyWith(products: products, isLoading: false);
     } catch (e) {
       state = state.copyWith(isLoading: false, errorMessage: e.toString());
     }
+  }
+
+  Future<void> setCategory(ProductType? category) async {
+    state = category == null
+        ? state.copyWith(clearCategory: true)
+        : state.copyWith(category: category);
+    await refresh();
+  }
+
+  Future<void> setSearch(String search) async {
+    state = state.copyWith(search: search);
+    await refresh();
   }
 }
 
@@ -89,3 +116,30 @@ final sellerOrdersProvider =
     StateNotifierProvider.autoDispose<SellerOrdersNotifier, SellerOrdersState>(
   (_) => SellerOrdersNotifier(),
 );
+
+// ── Shops ─────────────────────────────────────────────────────────
+
+/// The current user's own shop, or null if they haven't set one up yet.
+/// Drives whether the marketplace's "add listing" FAB sends them to shop
+/// setup first or straight to the listing form, and whether the profile
+/// page's shop tile reads "Open my shop" vs "Start selling".
+final myShopProvider = FutureProvider.autoDispose<ShopModel?>((ref) {
+  return MarketplaceRepository.instance.fetchMyShop();
+});
+
+/// Any shop by owner id — the public storefront page. Re-fetch on demand
+/// via `ref.invalidate(shopProvider(ownerId))` rather than watching a
+/// stream, since a shop's own edits happen through this same app and can
+/// just invalidate this provider directly.
+final shopProvider =
+    FutureProvider.autoDispose.family<ShopModel?, String>((ref, ownerId) {
+  return MarketplaceRepository.instance.fetchShop(ownerId);
+});
+
+/// A shop's inventory grid, separate from the owner-scoped `myShopProvider`
+/// so a visitor viewing someone else's storefront doesn't need to be the
+/// owner to see what's for sale.
+final shopProductsProvider = FutureProvider.autoDispose
+    .family<List<ProductModel>, String>((ref, ownerId) {
+  return MarketplaceRepository.instance.fetchProductsBySeller(ownerId);
+});

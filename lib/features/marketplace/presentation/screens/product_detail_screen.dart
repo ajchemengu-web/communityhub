@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../payments/domain/models/payment_transaction_model.dart';
@@ -82,9 +83,47 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   style: const TextStyle(
                       color: AppColors.secondary, fontSize: 18, fontWeight: FontWeight.w600)),
               if (product.sellerName != null) ...[
-                const SizedBox(height: 8),
-                Text('Sold by ${product.sellerName}',
-                    style: const TextStyle(color: Colors.white54)),
+                const SizedBox(height: 10),
+                // Trust signal + the "on clicked, redirect to the shop"
+                // path for browsing: the marketplace grid and this page
+                // both lead with the product first (research: fewer taps
+                // to a Buy button converts better), and the seller/shop
+                // is one tap away from here rather than the default
+                // landing spot.
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => context.push('/shop/${product.sellerId}'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: AppColors.darkSurface2,
+                          backgroundImage: product.sellerAvatarUrl != null
+                              ? CachedNetworkImageProvider(product.sellerAvatarUrl!)
+                              : null,
+                          child: product.sellerAvatarUrl == null
+                              ? const Icon(Icons.storefront_rounded,
+                                  size: 14, color: Colors.white38)
+                              : null,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text('Sold by ${product.sellerName}',
+                              style: const TextStyle(color: Colors.white70)),
+                        ),
+                        const Text('Visit shop',
+                            style: TextStyle(
+                                color: AppColors.secondary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600)),
+                        const Icon(Icons.chevron_right_rounded,
+                            color: AppColors.secondary, size: 18),
+                      ],
+                    ),
+                  ),
+                ),
               ],
               if (product.description != null) ...[
                 const SizedBox(height: 16),

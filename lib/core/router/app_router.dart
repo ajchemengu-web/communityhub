@@ -32,6 +32,9 @@ import '../../features/marketplace/presentation/screens/marketplace_home_screen.
 import '../../features/marketplace/presentation/screens/create_product_screen.dart';
 import '../../features/marketplace/presentation/screens/product_detail_screen.dart';
 import '../../features/marketplace/presentation/screens/seller_orders_screen.dart';
+import '../../features/marketplace/presentation/screens/shop_screen.dart';
+import '../../features/marketplace/presentation/screens/manage_shop_screen.dart';
+import '../../features/portfolio/presentation/screens/portfolio_screen.dart';
 import '../../features/memberships/presentation/screens/tier_picker_screen.dart';
 import '../../features/memberships/presentation/screens/manage_subscription_screen.dart';
 import '../../features/chat/presentation/screens/chats_screen.dart';
@@ -287,6 +290,30 @@ GoRouter appRouter(AppRouterRef ref) {
         path: '/marketplace/:productId',
         builder: (ctx, state) => ProductDetailScreen(
           productId: state.pathParameters['productId']!,
+        ),
+      ),
+
+      // ── Shops ────────────────────────────────────────────────
+      GoRoute(
+        path: AppRoutes.manageShop,
+        builder: (ctx, state) => const ManageShopScreen(),
+      ),
+      GoRoute(
+        path: '/shop/:ownerId',
+        builder: (ctx, state) => ShopScreen(
+          ownerId: state.pathParameters['ownerId']!,
+        ),
+      ),
+
+      // ── Portfolio (Profolio integration) ─────────────────────
+      GoRoute(
+        path: AppRoutes.myPortfolio,
+        builder: (ctx, state) => const PortfolioScreen(),
+      ),
+      GoRoute(
+        path: '/portfolio/:userId',
+        builder: (ctx, state) => PortfolioScreen(
+          userId: state.pathParameters['userId'],
         ),
       ),
 

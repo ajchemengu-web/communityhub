@@ -72,6 +72,13 @@ class _LiveHostScreenState extends ConsumerState<LiveHostScreen> {
         _room.localParticipant?.videoTrackPublications.firstOrNull?.track;
 
     return Scaffold(
+      // _CommentInput below already pads itself for the keyboard via
+      // MediaQuery viewInsets.bottom — leaving Scaffold's default
+      // resize-on-keyboard behavior on shrinks the whole body on top of
+      // that, and the background Stack's content doesn't fit in the
+      // reduced height (RenderFlex "bottom overflowed" when the comment
+      // box is focused).
+      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.black,
       body: Stack(
         children: [
@@ -247,6 +254,10 @@ class _LiveViewerScreenState extends ConsumerState<LiveViewerScreen> {
     final comments = ref.watch(liveCommentsProvider(stream.id));
 
     return Scaffold(
+      // See the matching comment in LiveHostScreen above — same fix,
+      // same reason (_CommentInput below already handles the keyboard
+      // inset itself).
+      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.black,
       body: Stack(
         children: [

@@ -51,7 +51,12 @@ android {
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
-                storeFile = file(keystoreProperties["storeFile"] as String)
+                // rootProject.file (not file) — resolves relative to
+                // android/, where key.properties and the .jks both live,
+                // not android/app/ where this build script's own project
+                // dir is. Using plain file() here was pointing at
+                // android/app/<keystore>, which doesn't exist.
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String

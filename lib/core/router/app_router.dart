@@ -42,7 +42,6 @@ import '../../features/stories/presentation/screens/story_viewer_screen.dart';
 import '../../features/stories/presentation/screens/story_creator_screen.dart';
 import '../../features/stories/presentation/screens/updates_screen.dart';
 import '../../features/home/domain/models/story_model.dart';
-import '../../features/live/domain/models/live_stream_model.dart';
 import '../../features/live/data/live_repository.dart';
 import '../../features/live/presentation/screens/live_host_screen.dart';
 import '../../features/camera/presentation/screens/camera_recorder_screen.dart';
@@ -336,17 +335,26 @@ GoRouter appRouter(AppRouterRef ref) {
       ),
 
       // ── Live streaming ────────────────────────────────────────
-      GoRoute(
-        path: AppRoutes.liveStart,
-        builder: (ctx, state) => const _LiveStartScreen(),
-      ),
-      GoRoute(
-        path: '/live/:streamId/watch',
-        builder: (ctx, state) {
-          final stream = state.extra as LiveStreamModel;
-          return LiveViewerScreen(stream: stream);
-        },
-      ),
+      // Routes unregistered for now — live streaming is temporarily
+      // disabled (1:1 audio/video calls remain fully available). The
+      // _LiveStartScreen class and the live/ feature's screens, models,
+      // and repository below are left in place, unlinked from routing
+      // and nav, so this can be turned back on later by re-adding these
+      // two GoRoutes and the "Go Live"/LIVE-tab entry points removed
+      // from home_screen.dart, new_post_screen.dart, and
+      // camera_recorder_screen.dart.
+      //
+      // GoRoute(
+      //   path: AppRoutes.liveStart,
+      //   builder: (ctx, state) => const _LiveStartScreen(),
+      // ),
+      // GoRoute(
+      //   path: '/live/:streamId/watch',
+      //   builder: (ctx, state) {
+      //     final stream = state.extra as LiveStreamModel;
+      //     return LiveViewerScreen(stream: stream);
+      //   },
+      // ),
 
       // ── Camera recorder ───────────────────────────────────────
       GoRoute(

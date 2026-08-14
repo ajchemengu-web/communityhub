@@ -502,10 +502,13 @@ class _ModeTabBar extends StatelessWidget {
   final _CameraMode current;
   final ValueChanged<_CameraMode> onChanged;
 
+  // 'Live' tab removed along with the live-streaming feature (see the
+  // matching note in home_screen.dart). _CameraMode.live is left defined
+  // below since nothing else references it, but it's no longer reachable
+  // from this tab bar.
   static const _modes = [
     (_CameraMode.video, 'Video'),
     (_CameraMode.short, 'Short'),
-    (_CameraMode.live, 'Live'),
     (_CameraMode.post, 'Post'),
   ];
 

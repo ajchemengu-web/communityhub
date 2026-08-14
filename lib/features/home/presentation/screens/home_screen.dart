@@ -11,7 +11,6 @@ import '../widgets/feed_post_card.dart';
 import '../widgets/youtube_video_card.dart';
 import '../providers/feed_provider.dart';
 import '../../../notifications/presentation/providers/notifications_provider.dart';
-import '../../../live/presentation/widgets/live_streams_row.dart';
 
 // ── Tab definitions ────────────────────────────────────────────
 class _HubTab {
@@ -124,7 +123,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             onNotificationTap: () => context.go(AppRoutes.notifications),
             onSearchTap: () => context.go(AppRoutes.search),
             onCommunitiesTap: () => context.go(AppRoutes.communities),
-            onGoLiveTap: () => context.push(AppRoutes.liveStart),
           ),
           SliverPersistentHeader(
             pinned: true,
@@ -175,7 +173,6 @@ class _HomeAppBar extends SliverAppBar {
     required VoidCallback onNotificationTap,
     required VoidCallback onSearchTap,
     required VoidCallback onCommunitiesTap,
-    required VoidCallback onGoLiveTap,
   }) : super(
     backgroundColor: AppColors.darkBackground,
     floating: true,
@@ -193,26 +190,22 @@ class _HomeAppBar extends SliverAppBar {
       children: [
         const Icon(Icons.hub_rounded, color: AppColors.secondary, size: 22),
         const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            AppConstants.appName,
-            style: AppTextStyles.titleMedium.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            softWrap: false,
+        Text(
+          'CommunityHub',
+          style: AppTextStyles.titleMedium.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
           ),
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     ),
     actions: [
-      IconButton(
-        icon: const Icon(Icons.live_tv_rounded, color: Colors.red, size: 24),
-        onPressed: onGoLiveTap,
-        tooltip: 'Go Live',
-      ),
+      // "Go Live" entry point removed along with the live-streaming
+      // feature — see LiveStreamsRow removal below for the other half.
+      // Live streaming's UI/models/repository still exist under
+      // lib/features/live/ so this can be turned back on later; nothing
+      // in that feature was deleted, just unlinked from the nav.
       IconButton(
         icon: const Icon(Icons.search_rounded, color: Colors.white70, size: 24),
         onPressed: onSearchTap,
@@ -455,13 +448,14 @@ class _FeedTabState extends ConsumerState<_FeedTab>
           onNotification: _onScrollNotification,
           child: ListView.separated(
             padding: const EdgeInsets.only(bottom: 20),
-            itemCount: items.length + 1 + (_isLoadingMore ? 1 : 0),
-            separatorBuilder: (_, i) => i == 0
-                ? const SizedBox.shrink()
-                : const Divider(height: 1, color: AppColors.darkBorder),
+            // The leading LiveStreamsRow (and its "+1" item/index offset)
+            // was removed along with the live-streaming feature; see the
+            // note on the "Go Live" button above.
+            itemCount: items.length + (_isLoadingMore ? 1 : 0),
+            separatorBuilder: (_, __) =>
+                const Divider(height: 1, color: AppColors.darkBorder),
             itemBuilder: (ctx, i) {
-              if (i == 0) return const LiveStreamsRow();
-              final itemIndex = i - 1;
+              final itemIndex = i;
               if (itemIndex == items.length) {
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),

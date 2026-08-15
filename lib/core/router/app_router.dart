@@ -34,6 +34,7 @@ import '../../features/marketplace/presentation/screens/product_detail_screen.da
 import '../../features/marketplace/presentation/screens/seller_orders_screen.dart';
 import '../../features/marketplace/presentation/screens/shop_screen.dart';
 import '../../features/marketplace/presentation/screens/manage_shop_screen.dart';
+import '../../features/marketplace/presentation/screens/shop_admin_screen.dart';
 import '../../features/portfolio/presentation/screens/portfolio_screen.dart';
 import '../../features/memberships/presentation/screens/tier_picker_screen.dart';
 import '../../features/memberships/presentation/screens/manage_subscription_screen.dart';
@@ -297,6 +298,18 @@ GoRouter appRouter(AppRouterRef ref) {
       GoRoute(
         path: AppRoutes.manageShop,
         builder: (ctx, state) => const ManageShopScreen(),
+      ),
+      // Must be registered before '/shop/:ownerId' below -- go_router
+      // matches path segments in list order, so the dynamic route would
+      // otherwise swallow this one (treating "admin" as an ownerId).
+      GoRoute(
+        path: AppRoutes.shopAdmin,
+        builder: (ctx, state) {
+          const tabNames = ['overview', 'listings', 'orders', 'settings'];
+          final tab = state.uri.queryParameters['tab'];
+          final index = tab == null ? 0 : tabNames.indexOf(tab);
+          return ShopAdminScreen(initialTab: index < 0 ? 0 : index);
+        },
       ),
       GoRoute(
         path: '/shop/:ownerId',

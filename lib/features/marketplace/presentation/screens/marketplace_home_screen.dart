@@ -75,9 +75,13 @@ class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.receipt_long_outlined),
-            tooltip: 'My orders',
-            onPressed: () => context.push(AppRoutes.sellerOrders),
+            icon: const Icon(Icons.storefront_rounded),
+            tooltip: 'My Shop',
+            // Opens the seller dashboard directly on its Orders tab --
+            // same starting point this icon always jumped to, just inside
+            // the fuller dashboard (Overview/Listings/Settings are a tab
+            // away) instead of the standalone orders-only screen.
+            onPressed: () => context.push('${AppRoutes.shopAdmin}?tab=orders'),
           ),
         ],
       ),

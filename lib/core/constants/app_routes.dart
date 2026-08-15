@@ -72,6 +72,10 @@ abstract class AppRoutes {
 
   // ── Shops ─────────────────────────────────────────────────
   static const String manageShop = '/shop/manage';
+  /// The seller dashboard (Overview/Listings/Orders/Settings). Optionally
+  /// takes a `?tab=` query param -- see ShopAdminScreen.initialTab and
+  /// app_router.dart's builder for the accepted values.
+  static const String shopAdmin = '/shop/admin';
   static const String shop = '/shop/:ownerId';
 
   // ── Portfolio (Profolio integration) ───────────────────────

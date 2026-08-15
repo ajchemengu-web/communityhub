@@ -150,3 +150,14 @@ final shopProductsProvider = FutureProvider.autoDispose
     .family<List<ProductModel>, String>((ref, ownerId) {
   return MarketplaceRepository.instance.fetchProductsBySeller(ownerId);
 });
+
+/// The caller's own listings, active or not -- what the shop admin
+/// dashboard's "Listings" tab manages. Deliberately separate from
+/// `shopProductsProvider` (which is scoped to *published, active* items
+/// for a public storefront view) since a seller managing their own
+/// inventory needs to see off-shelf items too, in order to put them back
+/// on shelf.
+final myListingsProvider =
+    FutureProvider.autoDispose<List<ProductModel>>((ref) {
+  return MarketplaceRepository.instance.fetchMyListings();
+});

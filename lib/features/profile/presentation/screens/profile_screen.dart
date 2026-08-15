@@ -760,7 +760,11 @@ class _OwnProfilePortfolioShopBars extends ConsumerWidget {
           icon: Icons.storefront_rounded,
           title: 'My Shop',
           subtitle: shopSubtitle,
-          onTap: () => context.push(AppRoutes.manageShop),
+          // The dashboard itself handles "no shop yet" with its own
+          // setup CTA (see ShopAdminScreen's Overview/Settings tabs), so
+          // this is always the same destination regardless of whether a
+          // shop exists -- one entry point, not two depending on state.
+          onTap: () => context.push(AppRoutes.shopAdmin),
         ),
       ],
     );

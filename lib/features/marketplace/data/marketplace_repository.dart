@@ -14,6 +14,11 @@ class MarketplaceRepository {
 
   final _client = SupabaseService.client;
 
+  /// Sentinel so [updateProduct]'s `stock` param can tell "not passed,
+  /// leave it alone" apart from "passed as null, meaning unlimited" --
+  /// a plain nullable param can't distinguish those two cases.
+  static const Object _unset = Object();
+
   // NOTE: the seller embed below targets `users!seller_id`, not
   // `profiles!seller_id` — products.seller_id's actual FK is to
   // public.users (see 20260704d_marketplace_schema.sql), and there is no
@@ -91,6 +96,11 @@ class MarketplaceRepository {
     return ProductModel.fromMap(row);
   }
 
+  /// Every listing the caller owns, active or not -- unlike
+  /// [fetchProducts]/[fetchProductsBySeller], which only ever return
+  /// `is_active = true` rows (what a buyer should see). Backs the shop
+  /// admin dashboard's "Listings" tab, where a seller needs to see their
+  /// off-shelf items too in order to put them back on shelf.
   Future<List<ProductModel>> fetchMyListings() async {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return [];
@@ -138,6 +148,46 @@ class MarketplaceRepository {
     final path = '$sellerId/${DateTime.now().millisecondsSinceEpoch}.$ext';
     await _client.storage.from(AppConstants.bucketProductImages).upload(path, file);
     return _client.storage.from(AppConstants.bucketProductImages).getPublicUrl(path);
+  }
+
+  /// Partial update of one of the caller's own listings -- every param
+  /// is optional and only the ones passed get sent, so a quick "toggle
+  /// on/off shelf" or "adjust stock" action doesn't have to resend the
+  /// whole product. RLS's `seller_id = auth.uid()` check on UPDATE (see
+  /// 20260704d_marketplace_schema.sql) means this can never target
+  /// another seller's product even if called with the wrong id.
+  ///
+  /// There is deliberately no `deleteProduct` -- Kilimall's own seller
+  /// guide draws the same distinction CommunityHub does here between
+  /// "Products on Shelf" and an offline/unlisted state rather than
+  /// letting sellers actually delete a listing, almost certainly because
+  /// orders reference product_id and a hard delete would either cascade
+  /// (destroying a buyer's purchase history) or be blocked by the FK.
+  /// Toggling `isActive` off is the real "remove from marketplace" action.
+  Future<ProductModel> updateProduct(
+    String productId, {
+    String? title,
+    String? description,
+    double? price,
+    List<String>? images,
+    Object? stock = _unset, // tri-state: unset / null (unlimited) / a value
+    bool? isActive,
+  }) async {
+    final patch = <String, dynamic>{
+      if (title != null) 'title': title,
+      if (description != null) 'description': description,
+      if (price != null) 'price': price,
+      if (images != null) 'images': images,
+      if (!identical(stock, _unset)) 'stock': stock,
+      if (isActive != null) 'is_active': isActive,
+    };
+    final row = await _client
+        .from('products')
+        .update(patch)
+        .eq('id', productId)
+        .select(_productSelect)
+        .single();
+    return ProductModel.fromMap(row);
   }
 
   // ── Orders ────────────────────────────────────────────────────

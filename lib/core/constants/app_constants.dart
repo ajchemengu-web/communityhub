@@ -86,9 +86,17 @@ abstract class AppConstants {
   ];
 
   // Technology / Career
+  //
+  // 'flutter' deliberately isn't in the first 3 entries: only the first 3
+  // keywords are ever used to build a hub's YouTube search query (see
+  // YouTubeService._buildHubQuery), and 'flutter' alone is ambiguous
+  // enough (heart flutter, eyelash flutter, swimming flutter kick...) to
+  // pull in unrelated results. It's still in the list further down for
+  // AppConstants.keywordsFor()'s content-filter use, where being one of
+  // many OR'd terms checked against a whole title/description is safe.
   static const List<String> techKeywords = [
-    'programming', 'flutter', 'cybersecurity', 'data science',
-    'machine learning', 'coding', 'software engineering',
+    'programming', 'software engineering', 'cybersecurity',
+    'flutter', 'data science', 'machine learning', 'coding',
     'web development', 'python', 'javascript', 'networking',
     'cloud computing', 'artificial intelligence', 'devops',
   ];
@@ -174,7 +182,19 @@ abstract class AppConstants {
   ];
 
   // Languages
+  //
+  // The first 3 entries are what actually drive the Languages hub's
+  // YouTube search (see the techKeywords comment above for why only the
+  // first 3 matter) — deliberately compound, adult-learner phrases rather
+  // than bare 'language learning' / 'english' / 'french'. Those bare
+  // words are what pulled baby "first words" / toddler-speech-development
+  // channels (astronomically popular, and genuinely about "English" and
+  // "language learning" in a literal sense) into this hub. The plain
+  // language names stay in the list below for keywordsFor()'s content
+  // filter, where matching loosely against a whole title/description is
+  // fine and actually desirable.
   static const List<String> languagesKeywords = [
+    'foreign language course', 'language learning for adults', 'polyglot',
     'language learning', 'french', 'english', 'spanish', 'german',
     'swahili', 'chinese', 'japanese', 'arabic', 'linguistics', 'grammar',
   ];
@@ -341,6 +361,20 @@ abstract class AppConstants {
   /// and other postgraduate-level material instead.
   static const String academicDepthQuery =
       'university lecture advanced research -kids -cartoon';
+
+  /// Appended to EVERY hub's YouTube search query, STEM or not. Some of
+  /// the most-watched content on all of YouTube is toddler/baby
+  /// education (the "first words" / nursery-rhyme genre routinely runs
+  /// into billions of views), and it happens to be genuinely relevant by
+  /// keyword to things like the Languages hub's "language learning" /
+  /// "English" search terms — so without excluding it explicitly, it can
+  /// crowd out actually-relevant results purely on view-count-driven
+  /// relevance ranking. This is deliberately separate from
+  /// [academicDepthQuery] (which is STEM-only) since every hub, not just
+  /// STEM ones, can hit this kind of unrelated-but-keyword-matching
+  /// pollution.
+  static const String generalContentExclusions =
+      '-baby -toddler -nursery';
 
   /// Returns the keyword list for a given hub type
   static List<String> keywordsFor(String hubType) {

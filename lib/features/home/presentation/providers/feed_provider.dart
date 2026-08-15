@@ -50,6 +50,17 @@ class FeedNotifier
   final Map<String, String?> _nextPageTokens = {};
   final Map<String, int> _hubCounts = {};
   final Set<String> _exhaustedHubs = {};
+  // A hub that throws (network hiccup, transient quota error, ...) used to
+  // be marked exhausted on the very first failure — permanently, for the
+  // rest of this screen's lifetime, even though nothing about the actual
+  // content was exhausted. In practice that made scrolling hit a hard
+  // "wall": one bad request on any hub and it silently stopped
+  // contributing forever. Now a hub only gets marked exhausted after
+  // several *consecutive* failures — a real outage still stops retrying
+  // (no infinite hammering), but a one-off hiccup no longer permanently
+  // kills that hub's content for the whole session.
+  final Map<String, int> _hubConsecutiveFailures = {};
+  static const int _maxConsecutiveFailures = 3;
   List<String> _hubs = const [];
   String _hubType = AppConstants.hubAll;
 
@@ -106,6 +117,7 @@ class FeedNotifier
     _nextPageTokens.clear();
     _hubCounts.clear();
     _exhaustedHubs.clear();
+    _hubConsecutiveFailures.clear();
     _isLoadingMore = false;
     _hubType = hubType;
     _hubs = _hubSetFor(hubType);
@@ -158,7 +170,16 @@ class FeedNotifier
   /// exhausted, then logs the final count for that hub.
   Future<void> _fetchHubUntil(String hub, int target) async {
     while ((_hubCounts[hub] ?? 0) < target && !_exhaustedHubs.contains(hub)) {
+      final before = _hubConsecutiveFailures[hub] ?? 0;
       await _fetchOnePage(hub);
+      // A failed attempt that didn't push this hub to fully-exhausted still
+      // needs a beat before retrying — otherwise a fast-failing error
+      // (e.g. a quota rejection, which returns almost instantly) turns
+      // this into a tight in-loop retry spin instead of a real retry.
+      final failedThisAttempt = (_hubConsecutiveFailures[hub] ?? 0) > before;
+      if (failedThisAttempt && !_exhaustedHubs.contains(hub)) {
+        await Future.delayed(const Duration(milliseconds: 400));
+      }
     }
     debugPrint(
       '[HomeFeed] hub=$hub fetched=${_hubCounts[hub] ?? 0}/$target '
@@ -177,12 +198,28 @@ class FeedNotifier
       final added = _appendUnique(hub, page.videos);
       _hubCounts[hub] = (_hubCounts[hub] ?? 0) + added;
       _nextPageTokens[hub] = page.nextPageToken;
+      _hubConsecutiveFailures[hub] = 0;
       if (page.nextPageToken == null) _exhaustedHubs.add(hub);
     } catch (e) {
-      // A hub that keeps failing (quota, network) shouldn't be retried
-      // forever — treat it as exhausted rather than spinning on it.
-      debugPrint('[HomeFeed] hub=$hub fetch failed, marking exhausted: $e');
-      _exhaustedHubs.add(hub);
+      // Only give up on a hub after several *consecutive* failures in a
+      // row — a single transient network/quota hiccup used to mark it
+      // exhausted permanently for the rest of this screen's lifetime,
+      // which is what made scrolling hit a hard "wall" well before
+      // content actually ran out. A real, sustained outage still stops
+      // retrying instead of hammering the API forever.
+      final failures = (_hubConsecutiveFailures[hub] ?? 0) + 1;
+      _hubConsecutiveFailures[hub] = failures;
+      if (failures >= _maxConsecutiveFailures) {
+        debugPrint(
+          '[HomeFeed] hub=$hub fetch failed $failures times in a row, '
+          'marking exhausted: $e',
+        );
+        _exhaustedHubs.add(hub);
+      } else {
+        debugPrint(
+          '[HomeFeed] hub=$hub fetch failed (attempt $failures/$_maxConsecutiveFailures), will retry: $e',
+        );
+      }
     }
   }
 

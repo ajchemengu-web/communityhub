@@ -13,7 +13,7 @@ class PortfolioConstants {
   /// https://profolio-web.vercel.app, or a custom domain once one's
   /// attached in Vercel). Find it on the Vercel dashboard's project page
   /// once profolio-web is deployed there.
-  static const String baseUrl = 'https://REPLACE_ME.vercel.app';
+  static const String baseUrl = 'https://profolio-sooty-two.vercel.app';
 
   /// Profolio's own Supabase project (completely separate from this
   /// app's — see .env.local in profolio-web). Used only for a public,

@@ -234,15 +234,23 @@ class FeedRepository {
       if (AppConstants.youtubeApiKey == 'YOUR_YOUTUBE_API_KEY') return [];
 
       if (hubType == AppConstants.hubAll) {
-        // Mix faith + science + technology + languages evenly
-        final quarter = (limit / 4).ceil();
+        // Mix faith + science + engineering + technology + languages —
+        // science/engineering get an extra slice each so STEM content is
+        // proportionally more prominent, and engineering is queried with
+        // its own keyword list instead of only ever riding along inside
+        // the generic "technology" query (which never even mentions the
+        // word "engineering").
+        final slice = (limit / 6).ceil();
         final results = await Future.wait([
-          yt.getFaithFeed(maxResults: quarter),
-          yt.getHubFeed(hubType: AppConstants.hubScience, maxResults: quarter),
-          yt.getHubFeed(hubType: AppConstants.hubTechnology, maxResults: quarter),
-          yt.getHubFeed(hubType: AppConstants.hubLanguages, maxResults: quarter),
+          yt.getFaithFeed(maxResults: slice),
+          yt.getHubFeed(hubType: AppConstants.hubScience, maxResults: slice * 2),
+          yt.getHubFeed(hubType: AppConstants.hubEngineering, maxResults: slice * 2),
+          yt.getHubFeed(hubType: AppConstants.hubTechnology, maxResults: slice),
+          yt.getHubFeed(hubType: AppConstants.hubLanguages, maxResults: slice),
         ]);
-        final merged = [...results[0], ...results[1], ...results[2], ...results[3]];
+        final merged = [
+          ...results[0], ...results[1], ...results[2], ...results[3], ...results[4],
+        ];
         merged.shuffle();
         return merged.take(limit).toList();
       } else if (hubType == AppConstants.hubFaith) {

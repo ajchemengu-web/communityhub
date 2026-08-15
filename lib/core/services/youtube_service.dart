@@ -73,7 +73,9 @@ class YouTubeService {
     int maxResults = AppConstants.youtubeMaxResults,
     String? pageToken,
   }) async {
-    final query = AppConstants.faithKeywords.take(3).join(' OR ');
+    // '|' is YouTube's actual OR operator for the `q` param (the literal
+    // word "OR" is not special — it would just be searched as text).
+    final query = AppConstants.faithKeywords.take(3).join('|');
     return searchVideos(
       query: query,
       maxResults: maxResults,
@@ -87,7 +89,7 @@ class YouTubeService {
     int maxResults = AppConstants.youtubeMaxResults,
     String? pageToken,
   }) async {
-    final query = AppConstants.techKeywords.take(3).join(' OR ');
+    final query = AppConstants.techKeywords.take(3).join('|');
     return searchVideos(
       query: query,
       maxResults: maxResults,
@@ -104,14 +106,26 @@ class YouTubeService {
   }) async {
     final keywords = AppConstants.keywordsFor(hubType);
     if (keywords.isEmpty) return [];
-    // Use the first 2-3 keywords joined with OR for a broad but relevant query
-    final query = keywords.take(3).join(' OR ');
+    final query = _buildHubQuery(hubType, keywords);
     return searchVideos(
       query: query,
       maxResults: maxResults,
       pageToken: pageToken,
       order: 'relevance',
     );
+  }
+
+  /// Builds the search query for a hub: a broad-but-relevant OR of the
+  /// first few subject keywords, plus (for STEM hubs — Science/Engineering
+  /// and their sub-hubs) an academic-depth bias so results skew toward
+  /// university/graduate/research material instead of shallow, generic
+  /// explainer content. See [AppConstants.isStemHub] / [AppConstants.academicDepthQuery].
+  String _buildHubQuery(String hubType, List<String> keywords) {
+    final core = keywords.take(3).join('|');
+    if (AppConstants.isStemHub(hubType)) {
+      return '$core ${AppConstants.academicDepthQuery}';
+    }
+    return core;
   }
 
   // ── Page-aware search (exposes YouTube's own nextPageToken) ──
@@ -161,7 +175,7 @@ class YouTubeService {
   }) async {
     final keywords = AppConstants.keywordsFor(hubType);
     if (keywords.isEmpty) return const YouTubeSearchPage(videos: []);
-    final query = keywords.take(3).join(' OR ');
+    final query = _buildHubQuery(hubType, keywords);
     return searchVideosPage(
       query: query,
       maxResults: maxResults,

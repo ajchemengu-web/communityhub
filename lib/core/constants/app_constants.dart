@@ -98,34 +98,52 @@ abstract class AppConstants {
     'biology', 'chemistry', 'physics', 'mathematics', 'science',
     'psychology', 'geography', 'history', 'anatomy', 'ecology',
     'geology', 'astronomy', 'neuroscience', 'genetics',
+    // Graduate/research-depth terms — without these, a bare subject word
+    // ("biology", "physics"...) tends to surface popular/intro explainer
+    // content on YouTube rather than university-level material.
+    'scientific research', 'graduate research', 'PhD research',
+    'systems biology', 'computational science', 'peer-reviewed study',
+    'university lecture', 'research seminar',
   ];
   static const List<String> biologyKeywords = [
     'biology', 'cell biology', 'genetics', 'ecology', 'anatomy',
     'microbiology', 'botany', 'zoology', 'evolution', 'biochemistry',
+    'molecular biology', 'systems biology', 'computational biology',
+    'immunology', 'developmental biology', 'structural biology',
   ];
   static const List<String> chemistryKeywords = [
     'chemistry', 'organic chemistry', 'periodic table', 'chemical reaction',
     'molecular', 'atom', 'electron', 'titration', 'thermodynamics',
+    'physical chemistry', 'quantum chemistry', 'analytical chemistry',
+    'polymer chemistry', 'spectroscopy', 'inorganic chemistry',
   ];
   static const List<String> physicsKeywords = [
     'physics', 'quantum mechanics', 'relativity', 'thermodynamics',
     'electromagnetism', 'optics', 'mechanics', 'nuclear physics', 'astrophysics',
+    'quantum field theory', 'condensed matter physics', 'particle physics',
+    'general relativity', 'statistical mechanics', 'graduate physics',
   ];
   static const List<String> mathematicsKeywords = [
     'mathematics', 'algebra', 'calculus', 'geometry', 'statistics',
     'trigonometry', 'linear algebra', 'differential equations', 'number theory',
+    'abstract algebra', 'topology', 'real analysis', 'functional analysis',
+    'graduate mathematics', 'mathematical proof',
   ];
   static const List<String> psychologyKeywords = [
     'psychology', 'cognitive psychology', 'behavioral psychology',
     'neuroscience', 'mental health', 'psychiatry', 'therapy', 'mindset',
+    'cognitive neuroscience', 'clinical psychology research',
+    'graduate psychology', 'psychology research methods',
   ];
   static const List<String> geographyKeywords = [
     'geography', 'physical geography', 'human geography', 'cartography',
     'climate', 'geopolitics', 'urban planning', 'population', 'continent',
+    'geospatial analysis', 'advanced geopolitics', 'climatology research',
   ];
   static const List<String> historyKeywords = [
     'history', 'ancient history', 'world war', 'civilisation', 'historical',
     'archaeology', 'empire', 'revolution', 'medieval', 'colonial',
+    'historiography', 'graduate history seminar', 'historical research',
   ];
 
   // Technology sub-hubs
@@ -133,18 +151,26 @@ abstract class AppConstants {
     'engineering', 'mechanical engineering', 'civil engineering',
     'electrical engineering', 'chemical engineering', 'structural engineering',
     'thermodynamics', 'materials science',
+    // Graduate/research-depth terms
+    'finite element analysis', 'engineering design', 'structural analysis',
+    'control systems engineering', 'fluid mechanics', 'systems engineering',
+    'engineering mathematics', 'graduate engineering', 'engineering research',
   ];
   static const List<String> roboticsKeywords = [
     'robotics', 'automation', 'robot', 'arduino', 'raspberry pi',
     'mechatronics', 'sensors', 'actuators', 'control systems', 'AI robot',
+    'robotics research', 'motion planning', 'robotic manipulation',
   ];
   static const List<String> aviationKeywords = [
     'aviation', 'aeronautics', 'pilot', 'aircraft', 'aerospace',
     'flight training', 'aerodynamics', 'cockpit', 'navigation', 'drone',
+    'aerospace engineering', 'flight dynamics', 'propulsion systems',
   ];
   static const List<String> computerScienceKeywords = [
     'computer science', 'algorithms', 'data structures', 'operating systems',
     'compiler', 'networking', 'database', 'cybersecurity', 'software engineering',
+    'distributed systems', 'computational complexity', 'formal methods',
+    'machine learning theory', 'graduate computer science',
   ];
 
   // Languages
@@ -291,6 +317,30 @@ abstract class AppConstants {
     hubFrench, hubEnglish, hubSpanish, hubGerman,
     hubSwahili, hubChinese, hubJapanese, hubArabic,
   ];
+
+  /// Hubs whose content should be biased toward university/graduate/
+  /// research depth rather than generic, high-school-level explainers —
+  /// covers the Science hub and all of its sub-hubs, plus Engineering and
+  /// its sibling Technology sub-hubs. Used to add an academic-depth bias
+  /// to YouTube search queries (see [academicDepthQuery]) and to weight
+  /// these hubs more heavily when the home feed mixes hubs together.
+  static const Set<String> stemHubTypes = {
+    hubScience, hubBiology, hubChemistry, hubPhysics, hubMathematics,
+    hubPsychology, hubGeography, hubHistory,
+    hubEngineering, hubRobotics, hubAviation, hubComputerScience,
+  };
+
+  static bool isStemHub(String hubType) => stemHubTypes.contains(hubType);
+
+  /// Appended to STEM-hub YouTube search queries. A bare subject keyword
+  /// ("physics", "biology"...) searched alone tends to surface popular,
+  /// introductory/high-school-level explainer videos because that's what
+  /// YouTube's general-audience relevance ranking favors. Adding explicit
+  /// depth signals — and excluding a couple of unambiguously shallow
+  /// terms — biases results toward university lectures, research talks,
+  /// and other postgraduate-level material instead.
+  static const String academicDepthQuery =
+      'university lecture advanced research -kids -cartoon';
 
   /// Returns the keyword list for a given hub type
   static List<String> keywordsFor(String hubType) {

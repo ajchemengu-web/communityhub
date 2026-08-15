@@ -41,12 +41,20 @@ class FeedNotifier
   final _yt = YouTubeService.instance;
 
   final List<PostModel> _posts = [];
-  final List<YouTubeVideo> _videos = [];
+  // Videos are kept per-hub (rather than one flat list) so [_buildFeedItems]
+  // can interleave hubs deliberately — weighting STEM hubs (Science,
+  // Engineering, ...) more heavily — instead of whatever order the
+  // parallel network fetches happened to complete in.
+  final Map<String, List<YouTubeVideo>> _hubBuffers = {};
   final Set<String> _seenVideoIds = {};
   final Map<String, String?> _nextPageTokens = {};
   final Map<String, int> _hubCounts = {};
   final Set<String> _exhaustedHubs = {};
   List<String> _hubs = const [];
+  String _hubType = AppConstants.hubAll;
+
+  int get _totalVideos =>
+      _hubBuffers.values.fold(0, (sum, list) => sum + list.length);
 
   static const bool _postsHasMore = false;
   bool _isLoadingMore = false;
@@ -69,6 +77,11 @@ class FeedNotifier
         AppConstants.hubFaith,
         AppConstants.hubTechnology,
         AppConstants.hubScience,
+        // Engineering previously had no query of its own on the home feed —
+        // it only ever rode along inside the generic "technology" query,
+        // whose keywords never even mention engineering. Give it its own
+        // slot so engineering-specific content actually gets fetched.
+        AppConstants.hubEngineering,
         AppConstants.hubLanguages,
         AppConstants.hubCareer,
       ];
@@ -88,20 +101,25 @@ class FeedNotifier
   @override
   Future<List<FeedItem>> build(String hubType) async {
     _posts.clear();
-    _videos.clear();
+    _hubBuffers.clear();
     _seenVideoIds.clear();
     _nextPageTokens.clear();
     _hubCounts.clear();
     _exhaustedHubs.clear();
     _isLoadingMore = false;
+    _hubType = hubType;
     _hubs = _hubSetFor(hubType);
 
     // Cache first — cheap, forward-compatible if it's ever populated by a
     // background refresh job. Today this is typically a no-op fallthrough.
+    // These cached rows aren't tagged with which of our synthetic _hubs
+    // they belong to, so file them under the requested hubType itself
+    // (harmless for a specific-hub screen; for "All" they just count
+    // toward hubAll's own — otherwise-unused — bucket).
     try {
       final cached = await _repo.fetchCachedVideos(
           hubType: hubType, limit: 20, offset: 0);
-      _appendUnique(cached);
+      _appendUnique(hubType, cached);
     } catch (_) {}
 
     // Front-load a real, deep buffer per hub in parallel instead of
@@ -109,7 +127,7 @@ class FeedNotifier
     await Future.wait(_hubs.map((hub) => _fetchHubUntil(hub, _minPerHub)));
 
     debugPrint(
-      '[HomeFeed] hub=$hubType initial load complete — total unique videos: ${_videos.length}',
+      '[HomeFeed] hub=$hubType initial load complete — total unique videos: $_totalVideos',
     );
 
     return _buildFeedItems();
@@ -123,11 +141,11 @@ class FeedNotifier
 
     _isLoadingMore = true;
     try {
-      final before = _videos.length;
+      final before = _totalVideos;
       await Future.wait(_hubs
           .where((h) => !_exhaustedHubs.contains(h))
           .map((hub) => _fetchOnePage(hub)));
-      if (_videos.length > before) {
+      if (_totalVideos > before) {
         state = AsyncData(_buildFeedItems());
       }
     } finally {
@@ -156,7 +174,7 @@ class FeedNotifier
         maxResults: _perHubResults,
         pageToken: _nextPageTokens[hub],
       );
-      final added = _appendUnique(page.videos);
+      final added = _appendUnique(hub, page.videos);
       _hubCounts[hub] = (_hubCounts[hub] ?? 0) + added;
       _nextPageTokens[hub] = page.nextPageToken;
       if (page.nextPageToken == null) _exhaustedHubs.add(hub);
@@ -168,11 +186,12 @@ class FeedNotifier
     }
   }
 
-  int _appendUnique(List<YouTubeVideo> page) {
+  int _appendUnique(String hub, List<YouTubeVideo> page) {
     var added = 0;
+    final buf = _hubBuffers.putIfAbsent(hub, () => []);
     for (final v in page) {
       if (_seenVideoIds.add(v.id)) {
-        _videos.add(v);
+        buf.add(v);
         added++;
       }
     }
@@ -236,14 +255,50 @@ class FeedNotifier
 
   // ── Build interleaved list ────────────────────────────────
 
-  /// Home feed is YouTube-only now (general posting retired) — interleave
-  /// an ad slide every [AppConstants.adFrequency] videos.
+  /// Home feed is YouTube-only now (general posting retired). Hubs are
+  /// mixed via weighted round-robin — rather than however the parallel
+  /// network fetches for each hub happened to complete, which gave no
+  /// control over ordering and could bury an entire hub's videos in one
+  /// block wherever its fetch happened to land — so every hub is spread
+  /// evenly across the scroll. STEM hubs (Science, Engineering, and their
+  /// sub-hubs — see [AppConstants.isStemHub]) get double weight, so
+  /// deep engineering/science content actually shows up more often
+  /// rather than being diluted 1-of-N among Faith/Languages/Career.
+  /// Interleaves an ad slide every [AppConstants.adFrequency] videos.
   List<FeedItem> _buildFeedItems() {
     final result = <FeedItem>[];
-    for (int i = 0; i < _videos.length; i++) {
-      result.add(FeedItem(youtubeVideo: _videos[i]));
-      if ((i + 1) % AppConstants.adFrequency == 0) {
-        result.add(const FeedItem(isAd: true));
+
+    // Merge order: the hubs this build/hub-screen fetched, plus the
+    // hubType's own cache bucket (relevant only for the "All" tab, where
+    // the initial cache read is filed under "all" — a key not otherwise
+    // present in _hubs — so it would silently be dropped without this).
+    final mixOrder = <String>[
+      for (final h in _hubs) h,
+      if (!_hubs.contains(_hubType) && (_hubBuffers[_hubType]?.isNotEmpty ?? false))
+        _hubType,
+    ];
+    if (mixOrder.isEmpty) return result;
+
+    final cursors = <String, int>{for (final h in mixOrder) h: 0};
+    var videoCount = 0;
+    var addedAny = true;
+    while (addedAny) {
+      addedAny = false;
+      for (final hub in mixOrder) {
+        final buf = _hubBuffers[hub] ?? const [];
+        final weight = AppConstants.isStemHub(hub) ? 2 : 1;
+        var taken = 0;
+        while (taken < weight && (cursors[hub] ?? 0) < buf.length) {
+          final idx = cursors[hub]!;
+          result.add(FeedItem(youtubeVideo: buf[idx]));
+          cursors[hub] = idx + 1;
+          videoCount++;
+          taken++;
+          addedAny = true;
+          if (videoCount % AppConstants.adFrequency == 0) {
+            result.add(const FeedItem(isAd: true));
+          }
+        }
       }
     }
     return result;

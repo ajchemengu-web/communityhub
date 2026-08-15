@@ -28,6 +28,7 @@ class MarketplaceState {
     List<ProductModel>? products,
     bool? isLoading,
     String? errorMessage,
+    bool clearError = false,
     ProductType? category,
     bool clearCategory = false,
     String? search,
@@ -35,7 +36,13 @@ class MarketplaceState {
       MarketplaceState(
         products: products ?? this.products,
         isLoading: isLoading ?? this.isLoading,
-        errorMessage: errorMessage ?? this.errorMessage,
+        // Same "?? this.x" pattern as category below can't tell "not
+        // passed" apart from "passed as null", so a plain
+        // `errorMessage ?? this.errorMessage` would let a stale error
+        // survive every *successful* refresh after the first failure —
+        // hence the explicit clearError flag, set at the start of every
+        // refresh() attempt.
+        errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
         category: clearCategory ? null : (category ?? this.category),
         search: search ?? this.search,
       );
@@ -49,7 +56,7 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
   final _repo = MarketplaceRepository.instance;
 
   Future<void> refresh() async {
-    state = state.copyWith(isLoading: true);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       final products = await _repo.fetchProducts(
         type: state.category,

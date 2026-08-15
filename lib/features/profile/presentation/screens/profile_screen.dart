@@ -10,6 +10,8 @@ import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
 
 import '../../../home/domain/models/post_model.dart';
+import '../../../marketplace/presentation/providers/marketplace_provider.dart';
+import '../../../portfolio/presentation/providers/portfolio_provider.dart';
 import '../../data/profile_detail_repository.dart';
 import '../providers/profile_provider.dart';
 
@@ -132,24 +134,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 // for reversible feature removal.
                 if (state.isOwnProfile)
                   SliverToBoxAdapter(
-                    child: Column(
-                      children: [
-                        _PortfolioBar(
-                          icon: Icons.badge_outlined,
-                          title: 'Make / View Portfolio',
-                          subtitle:
-                              'Create or edit your professional portfolio',
-                          onTap: () => context.push(AppRoutes.myPortfolio),
-                        ),
-                        _PortfolioBar(
-                          icon: Icons.storefront_rounded,
-                          title: 'My Shop',
-                          subtitle:
-                              'Set up your storefront and list items for sale',
-                          onTap: () => context.push(AppRoutes.manageShop),
-                        ),
-                      ],
-                    ),
+                    child: _OwnProfilePortfolioShopBars(uid: _uid),
                   )
                 else
                   SliverToBoxAdapter(
@@ -731,6 +716,56 @@ class _ActionBtn extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────
 // Portfolio / shop entry-point bar (Professional-dashboard-style row)
 // ─────────────────────────────────────────────────────────────────
+
+/// The own-profile pair of _PortfolioBar rows, split out so it can watch
+/// the shop/portfolio status providers itself -- someone else's profile
+/// never builds this widget at all, so it never pays for those lookups.
+/// Subtitles fall back to the plain "set this up" copy while loading or
+/// on error, so a slow/failed status check never blocks the bar itself
+/// from being tappable.
+class _OwnProfilePortfolioShopBars extends ConsumerWidget {
+  const _OwnProfilePortfolioShopBars({required this.uid});
+  final String uid;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final portfolioUrlAsync = ref.watch(publishedPortfolioUrlProvider(uid));
+    final shopAsync = ref.watch(myShopProvider);
+
+    final portfolioSubtitle = portfolioUrlAsync.maybeWhen(
+      data: (url) => url != null
+          ? 'Your portfolio is live — tap to view or edit it'
+          : 'Create or edit your professional portfolio',
+      orElse: () => 'Create or edit your professional portfolio',
+    );
+
+    final shopSubtitle = shopAsync.maybeWhen(
+      data: (shop) => shop == null
+          ? 'Set up your storefront and list items for sale'
+          : (shop.isPublished
+              ? '${shop.name} · live in the marketplace'
+              : '${shop.name} · draft, only you can see it'),
+      orElse: () => 'Set up your storefront and list items for sale',
+    );
+
+    return Column(
+      children: [
+        _PortfolioBar(
+          icon: Icons.badge_outlined,
+          title: 'Make / View Portfolio',
+          subtitle: portfolioSubtitle,
+          onTap: () => context.push(AppRoutes.myPortfolio),
+        ),
+        _PortfolioBar(
+          icon: Icons.storefront_rounded,
+          title: 'My Shop',
+          subtitle: shopSubtitle,
+          onTap: () => context.push(AppRoutes.manageShop),
+        ),
+      ],
+    );
+  }
+}
 
 class _PortfolioBar extends StatelessWidget {
   const _PortfolioBar({

@@ -150,12 +150,14 @@ class _ManageShopScreenState extends ConsumerState<ManageShopScreen> {
                 const SizedBox(height: 20),
                 TextField(
                   controller: _nameCtrl,
+                  textCapitalization: TextCapitalization.words,
                   style: const TextStyle(color: Colors.white),
                   decoration: const InputDecoration(labelText: 'Shop name'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _categoryCtrl,
+                  textCapitalization: TextCapitalization.words,
                   style: const TextStyle(color: Colors.white),
                   decoration: const InputDecoration(
                       labelText: 'Category (e.g. Bakery, Clothing, Photography)'),
@@ -240,9 +242,11 @@ class _ManageShopScreenState extends ConsumerState<ManageShopScreen> {
           .showSnackBar(const SnackBar(content: Text('Shop saved')));
       context.pop();
     } catch (e) {
+      debugPrint('ManageShopScreen save failed: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not save shop: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Couldn't save your shop — check your connection "
+              'and try again.')));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }

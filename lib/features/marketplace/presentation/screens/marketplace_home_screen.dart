@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,11 +27,39 @@ class MarketplaceHomeScreen extends ConsumerStatefulWidget {
 
 class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
   final _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// Filters as you type instead of making people find and tap the
+  /// keyboard's search button -- the 450ms debounce is just enough to
+  /// not fire a query per keystroke while still feeling live. Submitting
+  /// (search button / Enter) bypasses the wait entirely.
+  void _onSearchChanged(String value) {
+    setState(() {}); // toggles the clear button
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 450), () {
+      ref.read(marketplaceProvider.notifier).setSearch(value);
+    });
+  }
+
+  void _onSearchSubmitted(String value) {
+    _searchDebounce?.cancel();
+    ref.read(marketplaceProvider.notifier).setSearch(value);
+  }
+
+  void _clearFilters() {
+    _searchDebounce?.cancel();
+    _searchCtrl.clear();
+    final notifier = ref.read(marketplaceProvider.notifier);
+    notifier.setSearch('');
+    notifier.setCategory(null);
+    setState(() {});
   }
 
   @override
@@ -53,6 +83,7 @@ class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _onAddTap(context, ref),
+        tooltip: 'List an item',
         child: const Icon(Icons.add),
       ),
       body: Column(
@@ -63,8 +94,7 @@ class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
               controller: _searchCtrl,
               style: const TextStyle(color: Colors.white),
               textInputAction: TextInputAction.search,
-              onSubmitted: (v) =>
-                  ref.read(marketplaceProvider.notifier).setSearch(v),
+              onSubmitted: _onSearchSubmitted,
               decoration: InputDecoration(
                 hintText: 'Search listings',
                 hintStyle: const TextStyle(color: Colors.white38),
@@ -83,12 +113,11 @@ class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
                             color: Colors.white38, size: 18),
                         onPressed: () {
                           _searchCtrl.clear();
-                          ref.read(marketplaceProvider.notifier).setSearch('');
-                          setState(() {});
+                          _onSearchSubmitted('');
                         },
                       ),
               ),
-              onChanged: (_) => setState(() {}), // toggles the clear button
+              onChanged: _onSearchChanged,
             ),
           ),
           SizedBox(
@@ -119,37 +148,64 @@ class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: state.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : RefreshIndicator(
-                    onRefresh: () => ref.read(marketplaceProvider.notifier).refresh(),
-                    child: state.products.isEmpty
-                        ? ListView(
-                            children: const [
-                              SizedBox(height: 120),
-                              Center(
-                                child: Text('No listings match this search',
-                                    style: TextStyle(color: Colors.white54)),
-                              ),
-                            ],
-                          )
-                        : GridView.builder(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                              childAspectRatio: 0.66,
-                            ),
-                            itemCount: state.products.length,
-                            itemBuilder: (context, i) =>
-                                _ProductCard(product: state.products[i]),
-                          ),
-                  ),
+            child: _buildBody(state),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBody(MarketplaceState state) {
+    if (state.isLoading && state.products.isEmpty) {
+      // Only the very first load (or a hard refresh with nothing cached
+      // yet) blocks the whole area -- a search/category change while
+      // results are already on screen just lets the grid update under
+      // RefreshIndicator's spinner instead of flashing to blank.
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final hasFilter = state.category != null || state.search.isNotEmpty;
+
+    Widget content;
+    if (state.errorMessage != null && state.products.isEmpty) {
+      content = _MarketplaceMessage(
+        icon: Icons.wifi_off_rounded,
+        title: "Couldn't load the marketplace",
+        subtitle: 'Check your connection and pull down to try again.',
+      );
+    } else if (state.products.isEmpty && hasFilter) {
+      content = _MarketplaceMessage(
+        icon: Icons.search_off_rounded,
+        title: 'No listings match this search',
+        subtitle: 'Try a different keyword or category.',
+        actionLabel: 'Clear filters',
+        onAction: _clearFilters,
+      );
+    } else if (state.products.isEmpty) {
+      content = const _MarketplaceMessage(
+        icon: Icons.storefront_outlined,
+        title: 'Nothing listed yet',
+        subtitle: 'Be the first to open a shop and list something for sale.',
+      );
+    } else {
+      content = GridView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.66,
+        ),
+        itemCount: state.products.length,
+        itemBuilder: (context, i) => _ProductCard(product: state.products[i]),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => ref.read(marketplaceProvider.notifier).refresh(),
+      child: content is GridView
+          ? content
+          : ListView(children: [const SizedBox(height: 80), content]),
     );
   }
 
@@ -178,6 +234,57 @@ class _MarketplaceHomeScreenState extends ConsumerState<MarketplaceHomeScreen> {
       case ProductType.ticket:
         return 'Tickets';
     }
+  }
+}
+
+/// Shared shape for the marketplace's three "nothing to show" cases
+/// (network error, filtered-to-nothing, genuinely empty) -- same icon +
+/// title + subtitle layout, with an optional action button so
+/// "no results for this filter" can offer a one-tap way out instead of
+/// making people manually clear the search box and re-tap "All".
+class _MarketplaceMessage extends StatelessWidget {
+  const _MarketplaceMessage({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white24, size: 48),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54, fontSize: 13),
+          ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 16),
+            OutlinedButton(onPressed: onAction, child: Text(actionLabel!)),
+          ],
+        ],
+      ),
+    );
   }
 }
 

@@ -63,6 +63,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      // The raw exception (Supabase function/network errors, etc.) goes to
+      // the debug log only -- _ErrorState below maps it to something a
+      // person can actually act on instead of showing them a stack trace.
+      debugPrint('PortfolioScreen load failed: $e');
       if (!mounted) return;
       setState(() {
         _error = '$e';
@@ -104,6 +108,14 @@ class _PortfolioWebViewState extends State<_PortfolioWebView> {
   late final WebViewController _controller;
   bool _pageLoading = true;
 
+  /// True once the WebView has painted anything at all. Only the very
+  /// first load blocks the screen behind a full overlay (there's nothing
+  /// to see behind it yet); once real content has shown up, a later
+  /// in-page navigation (tapping a link inside Profolio) just shows a
+  /// thin progress bar over the still-visible previous page, the way a
+  /// normal in-app browser would, instead of blanking the whole screen.
+  bool _hasLoadedOnce = false;
+
   @override
   void initState() {
     super.initState();
@@ -111,7 +123,10 @@ class _PortfolioWebViewState extends State<_PortfolioWebView> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
         onPageStarted: (_) => setState(() => _pageLoading = true),
-        onPageFinished: (_) => setState(() => _pageLoading = false),
+        onPageFinished: (_) => setState(() {
+          _pageLoading = false;
+          _hasLoadedOnce = true;
+        }),
       ))
       ..loadRequest(Uri.parse(widget.url));
   }
@@ -121,11 +136,22 @@ class _PortfolioWebViewState extends State<_PortfolioWebView> {
     return Stack(
       children: [
         WebViewWidget(controller: _controller),
-        if (_pageLoading)
+        if (_pageLoading && !_hasLoadedOnce)
           const Positioned.fill(
             child: ColoredBox(
               color: AppColors.darkBackground,
               child: Center(child: CircularProgressIndicator()),
+            ),
+          )
+        else if (_pageLoading)
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: LinearProgressIndicator(
+              minHeight: 2,
+              backgroundColor: Colors.transparent,
+              color: AppColors.secondary,
             ),
           ),
       ],
@@ -163,6 +189,27 @@ class _ErrorState extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
 
+  /// [message] is a raw exception's toString() -- useful in the debug
+  /// log (see _PortfolioScreenState._load's catch block), meaningless to
+  /// a person looking at their phone. Map the couple of cases worth
+  /// distinguishing to plain language and fall back to a generic retry
+  /// prompt for everything else, rather than ever showing the raw text.
+  String get _friendlyMessage {
+    final m = message.toLowerCase();
+    if (m.contains('not_found') || m.contains('404')) {
+      return "We couldn't reach your portfolio right now. This usually "
+          "clears up on its own -- try again in a moment.";
+    }
+    if (m.contains('socketexception') ||
+        m.contains('network') ||
+        m.contains('timeout') ||
+        m.contains('connection')) {
+      return "You're offline, or the connection dropped. Check your "
+          'internet and try again.';
+    }
+    return "Something went wrong opening your portfolio. Please try again.";
+  }
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -174,7 +221,7 @@ class _ErrorState extends StatelessWidget {
             const Icon(Icons.error_outline_rounded,
                 color: Colors.white38, size: 48),
             const SizedBox(height: 12),
-            Text('Could not open your portfolio: $message',
+            Text(_friendlyMessage,
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white54)),
             const SizedBox(height: 16),

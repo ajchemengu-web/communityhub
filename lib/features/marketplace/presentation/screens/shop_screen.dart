@@ -19,22 +19,40 @@ class ShopScreen extends ConsumerWidget {
   const ShopScreen({super.key, required this.ownerId});
   final String ownerId;
 
+  /// Loading/errored/no-shop-here all render as a plain screen with a
+  /// bare AppBar -- unlike the "shop loaded" branch, which builds its own
+  /// SliverAppBar behind the banner image. These three used to render
+  /// with no AppBar at all, which meant no back button and no way off
+  /// the screen besides the system back gesture -- a real dead end.
+  Widget _plainScaffold(Widget body) => Scaffold(
+        backgroundColor: AppColors.darkBackground,
+        appBar: AppBar(
+          backgroundColor: AppColors.darkSurface,
+          foregroundColor: Colors.white,
+        ),
+        body: body,
+      );
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isOwner = SupabaseService.currentUserId == ownerId;
     final shopAsync = ref.watch(shopProvider(ownerId));
 
-    return Scaffold(
-      backgroundColor: AppColors.darkBackground,
-      body: shopAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => _ErrorState(message: '$e'),
-        data: (shop) {
-          if (shop == null) {
-            return _EmptyShopState(isOwner: isOwner);
-          }
-          final productsAsync = ref.watch(shopProductsProvider(ownerId));
-          return RefreshIndicator(
+    return shopAsync.when(
+      loading: () =>
+          _plainScaffold(const Center(child: CircularProgressIndicator())),
+      error: (e, _) => _plainScaffold(_ErrorState(
+        message: '$e',
+        onRetry: () => ref.invalidate(shopProvider(ownerId)),
+      )),
+      data: (shop) {
+        if (shop == null) {
+          return _plainScaffold(_EmptyShopState(isOwner: isOwner));
+        }
+        final productsAsync = ref.watch(shopProductsProvider(ownerId));
+        return Scaffold(
+          backgroundColor: AppColors.darkBackground,
+          body: RefreshIndicator(
             onRefresh: () async {
               ref.invalidate(shopProvider(ownerId));
               ref.invalidate(shopProductsProvider(ownerId));
@@ -206,9 +224,9 @@ class ShopScreen extends ConsumerWidget {
                 ),
               ],
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -218,9 +236,10 @@ class ShopScreen extends ConsumerWidget {
           await ChatRepository.instance.getOrCreateDirectConversation(ownerId);
       if (context.mounted) context.push('/chat/${convo.id}');
     } catch (e) {
+      debugPrint('ShopScreen _messageSeller failed: $e');
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Could not open chat: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Could not open chat — please try again.')));
       }
     }
   }
@@ -336,17 +355,40 @@ class _EmptyShopState extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message});
+  const _ErrorState({required this.message, this.onRetry});
   final String message;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
+    // Keep the raw exception in the debug log, not on screen -- a
+    // person shouldn't have to parse a stack trace to know their
+    // internet dropped.
+    debugPrint('ShopScreen error: $message');
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Text('Something went wrong: $message',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white54)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline_rounded,
+                color: Colors.white38, size: 40),
+            const SizedBox(height: 12),
+            const Text("Couldn't load this shop",
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Text('Check your connection and try again.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, fontSize: 13)),
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
+            ],
+          ],
+        ),
       ),
     );
   }

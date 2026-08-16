@@ -139,26 +139,27 @@ class CommunityMembersScreen extends ConsumerWidget {
                                   action: action,
                                   // Safe: this button only renders when
                                   // `canManage` is true, which already
-                                  // requires userId != null.
-                                  userId: userId!,
+                                  // requires userId != null (the analyzer
+                                  // confirms the promotion holds here).
+                                  userId: userId,
                                   name: (u['full_name'] ??
                                       u['username'] ??
                                       'this member') as String,
                                 ),
                                 itemBuilder: (context) => [
-                                  if (role != 'admin' && viewer!.isAdmin)
+                                  if (role != 'admin' && viewer.isAdmin)
                                     const PopupMenuItem(
                                       value: 'make_admin',
                                       child: Text('Make admin'),
                                     ),
                                   if (role != 'moderator' &&
                                       role != 'admin' &&
-                                      viewer!.isModerator)
+                                      viewer.isModerator)
                                     const PopupMenuItem(
                                       value: 'make_moderator',
                                       child: Text('Make moderator'),
                                     ),
-                                  if (role != 'member' && viewer!.isAdmin)
+                                  if (role != 'member' && viewer.isAdmin)
                                     const PopupMenuItem(
                                       value: 'make_member',
                                       child: Text('Remove as staff'),

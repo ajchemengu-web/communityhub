@@ -65,6 +65,10 @@ class EventDetailScreen extends ConsumerWidget {
                   const SizedBox(height: 24),
                 ],
                 _AttendeesSection(state: state),
+                if (event.organizerId == SupabaseService.currentUserId) ...[
+                  const SizedBox(height: 24),
+                  _OrganizerAttendeeBreakdown(state: state),
+                ],
                 const SizedBox(height: 32),
               ]),
             ),
@@ -569,6 +573,128 @@ class _AttendeesSection extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Organizer-only attendance breakdown ──────────────────────────────
+// The section above (_AttendeesSection) is a public "N going" avatar
+// strip visible to any viewer -- it never showed Maybe/Can't Go at
+// all, and never showed names beyond a hover tooltip. Organizers need
+// the full picture (who's actually coming vs. undecided vs. declined,
+// by name) to plan the event, so this is a second, organizer-only
+// section using the same already-fetched EventDetailState.attendees
+// data (see goingList/maybeList/notGoingList on EventDetailState) --
+// no new fetch required.
+
+class _OrganizerAttendeeBreakdown extends StatelessWidget {
+  const _OrganizerAttendeeBreakdown({required this.state});
+  final EventDetailState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.darkBorder),
+      ),
+      child: Theme(
+        // ExpansionTile's default divider/icon colors don't fit the
+        // dark surface it's embedded in here -- scope the override to
+        // just this widget rather than the whole app theme.
+        data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent,
+          listTileTheme: const ListTileThemeData(iconColor: Colors.white70),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Attendance (organizer view)',
+                  style: AppTextStyles.titleSmall
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+            ),
+            _RsvpGroupTile(
+              label: 'Going',
+              icon: Icons.check_circle_outline,
+              color: Colors.green,
+              rsvps: state.goingList,
+            ),
+            const Divider(height: 1, color: AppColors.darkBorder),
+            _RsvpGroupTile(
+              label: 'Maybe',
+              icon: Icons.help_outline,
+              color: Colors.orange,
+              rsvps: state.maybeList,
+            ),
+            const Divider(height: 1, color: AppColors.darkBorder),
+            _RsvpGroupTile(
+              label: "Can't go",
+              icon: Icons.cancel_outlined,
+              color: AppColors.textSecondary,
+              rsvps: state.notGoingList,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RsvpGroupTile extends StatelessWidget {
+  const _RsvpGroupTile({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.rsvps,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final List<RsvpModel> rsvps;
+
+  @override
+  Widget build(BuildContext context) {
+    if (rsvps.isEmpty) {
+      return ListTile(
+        leading: Icon(icon, color: color),
+        title: Text('$label (0)', style: AppTextStyles.bodyMedium),
+        subtitle: Text('No one yet',
+            style: AppTextStyles.bodySmall
+                .copyWith(color: AppColors.textSecondary)),
+      );
+    }
+    return ExpansionTile(
+      leading: Icon(icon, color: color),
+      title: Text('$label (${rsvps.length})',
+          style: AppTextStyles.bodyMedium),
+      collapsedIconColor: AppColors.textSecondary,
+      iconColor: AppColors.textSecondary,
+      children: rsvps
+          .map((a) => ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: AppColors.darkSurface2,
+                  backgroundImage: a.userAvatar != null
+                      ? CachedNetworkImageProvider(a.userAvatar!)
+                      : null,
+                  child: a.userAvatar == null
+                      ? Text((a.userName ?? 'M')[0].toUpperCase(),
+                          style: AppTextStyles.caption)
+                      : null,
+                ),
+                title: Text(a.userName ?? 'Member',
+                    style: AppTextStyles.bodySmall),
+              ))
+          .toList(),
     );
   }
 }

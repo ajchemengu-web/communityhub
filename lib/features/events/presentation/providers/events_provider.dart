@@ -135,6 +135,8 @@ class EventDetailState {
       attendees.where((a) => a.status == RsvpStatus.going).toList();
   List<RsvpModel> get maybeList =>
       attendees.where((a) => a.status == RsvpStatus.maybe).toList();
+  List<RsvpModel> get notGoingList =>
+      attendees.where((a) => a.status == RsvpStatus.notGoing).toList();
 
   EventDetailState copyWith({
     EventModel? event,

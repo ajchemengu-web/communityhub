@@ -316,7 +316,19 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
       } catch (_) {
         // Nothing was playing — fine to ignore.
       }
-      await _player.play(UrlSource(url));
+      try {
+        await _player.play(UrlSource(url));
+      } catch (e) {
+        // Both audio hosts (mp3quran.net, archive.org) are third-party
+        // CDNs with no uptime guarantee — archive.org in particular is
+        // known for occasional transient hiccups under load. One quiet
+        // retry after a short pause turns a real fraction of those into
+        // successful playback instead of an error the user has to
+        // manually retry themselves.
+        debugPrint('Quran audio playback error, retrying once ($segment, surah ${widget.surah.number}): $e');
+        await Future.delayed(const Duration(milliseconds: 600));
+        await _player.play(UrlSource(url));
+      }
     } catch (e) {
       debugPrint('Quran audio playback error ($segment, surah ${widget.surah.number}): $e');
       if (!mounted) return;

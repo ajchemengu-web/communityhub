@@ -100,7 +100,24 @@ class QuranAudioRepository {
         final reciter = Map<String, dynamic>.from(r as Map);
         final moshafList = reciter['moshaf'] as List<dynamic>? ?? [];
         if (moshafList.isEmpty) continue;
-        final moshaf = Map<String, dynamic>.from(moshafList.first as Map);
+        final moshafMaps =
+            moshafList.map((m) => Map<String, dynamic>.from(m as Map)).toList();
+        // mp3quran.net doesn't guarantee the standard "Hafs A'n Assem"
+        // riwaya (the transmission almost every reciter records and every
+        // listener expects) is listed first when a reciter has recorded
+        // more than one. Blindly taking moshafList.first broke playback
+        // for Mishary Alafasy (id 123) in particular: his array lists a
+        // rare "Rewayat AlDorai A'n Al-Kisa'ai" riwaya first, and that
+        // server folder doesn't actually have surah 1 (likely most/all
+        // surahs) — it 404s. That surfaced in the app as a misleading
+        // "Could not play audio. Check your internet connection." error,
+        // even though the network and the standard Hafs URL both work
+        // fine (confirmed by hand). Prefer the Hafs riwaya by name; fall
+        // back to the first entry only if a reciter genuinely has none.
+        final moshaf = moshafMaps.firstWhere(
+          (m) => (m['name'] as String? ?? '').toLowerCase().contains('hafs'),
+          orElse: () => moshafMaps.first,
+        );
         if (moshaf['server'] == null) continue;
         reciters.add(ReciterModel.fromMp3QuranJson(reciter, moshaf));
       }

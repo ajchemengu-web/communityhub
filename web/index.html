@@ -40,12 +40,22 @@
     in your Firebase/Google Cloud project don't cover web. Create a Web
     application OAuth client in Google Cloud Console (APIs & Services →
     Credentials) with this deployed origin as an authorized JavaScript
-    origin, then uncomment and fill in the line below. Until then,
-    Google Sign-In through Supabase Auth's OAuth redirect (login screen)
-    still works fine on web without this tag — only the YouTube-scope
-    request in reels_screen.dart needs it.
+    origin, then replace the placeholder content below with the real
+    client id. Google Sign-In through Supabase Auth's OAuth redirect
+    (login screen) is unaffected either way — only the YouTube-scope
+    request in reels_screen.dart uses this.
+
+    IMPORTANT: this tag must always be present with SOME value, even a
+    placeholder. google_sign_in_web reads it during its own plugin
+    registration — which Flutter runs unconditionally on every web
+    build once google_sign_in is a dependency, regardless of whether
+    the app ever calls GoogleSignIn() — and throws an uncaught error
+    that blanks the whole app if the tag is missing entirely. With the
+    placeholder below, registration completes safely; the actual
+    YouTube like/subscribe buttons simply no-op (already wrapped in a
+    try/catch in _getYouTubeToken()) until a real client id is set.
   -->
-  <!-- <meta name="google-signin-client_id" content="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"> -->
+  <meta name="google-signin-client_id" content="000000000000-placeholder00000000000000.apps.googleusercontent.com">
 </head>
 <body>
   <!--

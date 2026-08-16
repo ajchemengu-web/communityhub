@@ -9,12 +9,21 @@ import 'package:intl/intl.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../communities/data/communities_repository.dart';
+import '../../../communities/domain/models/community_model.dart';
 import '../../data/events_repository.dart';
 import '../../domain/models/event_model.dart';
 import '../providers/events_provider.dart';
 
 class CreateEventScreen extends ConsumerStatefulWidget {
-  const CreateEventScreen({super.key});
+  const CreateEventScreen({super.key, this.communityId});
+
+  /// Pre-selects and locks the community this event belongs to, for
+  /// when this screen is reached from a community's own "Create Event"
+  /// entry point. Null (the only way it's reached today, via the
+  /// generic /events/create route) means the user picks from their own
+  /// communities in-screen, or leaves it as a personal event.
+  final String? communityId;
 
   @override
   ConsumerState<CreateEventScreen> createState() =>
@@ -36,6 +45,93 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   bool _isSubmitting = false;
 
   final _picker = ImagePicker();
+
+  // ── Community selection ──────────────────────────────────────
+  // This used to be hardcoded to `communityId: null` with a
+  // "TODO: community selector" comment -- events created through this
+  // screen were never actually linked to a community despite the
+  // model/schema fully supporting it. _myCommunities is only used when
+  // widget.communityId is null (i.e. this screen wasn't opened from a
+  // specific community already).
+  List<CommunityModel> _myCommunities = [];
+  bool _loadingCommunities = true;
+  String? _selectedCommunityId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCommunityId = widget.communityId;
+    if (widget.communityId == null) {
+      _loadMyCommunities();
+    } else {
+      _loadingCommunities = false;
+    }
+  }
+
+  Future<void> _loadMyCommunities() async {
+    try {
+      final communities =
+          await CommunitiesRepository.instance.fetchMyCommunities();
+      if (mounted) {
+        setState(() {
+          _myCommunities = communities;
+          _loadingCommunities = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingCommunities = false);
+    }
+  }
+
+  Future<void> _pickCommunity() async {
+    final selected = await showModalBottomSheet<String?>(
+      context: context,
+      backgroundColor: AppColors.darkSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Attach to a community',
+                    style: AppTextStyles.titleMedium),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_outline,
+                  color: AppColors.textSecondary),
+              title: const Text('No community (personal event)'),
+              trailing: _selectedCommunityId == null
+                  ? const Icon(Icons.check, color: AppColors.primary)
+                  : null,
+              onTap: () => Navigator.pop(context, ''),
+            ),
+            const Divider(height: 1, color: AppColors.darkBorder),
+            ..._myCommunities.map((c) => ListTile(
+                  leading: const Icon(Icons.groups_outlined,
+                      color: AppColors.textSecondary),
+                  title: Text(c.name),
+                  trailing: _selectedCommunityId == c.id
+                      ? const Icon(Icons.check, color: AppColors.primary)
+                      : null,
+                  onTap: () => Navigator.pop(context, c.id),
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    // '' is the sentinel for "explicitly chose no community" (distinct
+    // from null, which means "sheet dismissed without a choice").
+    if (selected != null) {
+      setState(() => _selectedCommunityId = selected.isEmpty ? null : selected);
+    }
+  }
 
   @override
   void dispose() {
@@ -142,7 +238,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         description: _descCtrl.text.trim().isEmpty
             ? null
             : _descCtrl.text.trim(),
-        communityId: null, // TODO: community selector
+        communityId: _selectedCommunityId,
         type: _type,
         isOnline: _isOnline,
         location: _isOnline ? null : _locationCtrl.text.trim().isEmpty
@@ -257,6 +353,64 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               onChanged: (t) => setState(() => _type = t),
             ),
             const SizedBox(height: 24),
+
+            // Community (only when not already locked to one by the
+            // caller — see widget.communityId)
+            if (widget.communityId == null) ...[
+              const _SectionLabel('Community (optional)'),
+              const SizedBox(height: 12),
+              _loadingCommunities
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.primary),
+                      ),
+                    )
+                  : _myCommunities.isEmpty
+                      ? Text(
+                          "You haven't joined any communities yet — this will be a personal event.",
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.textSecondary),
+                        )
+                      : GestureDetector(
+                          onTap: _pickCommunity,
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: AppColors.darkSurface,
+                              borderRadius: BorderRadius.circular(12),
+                              border:
+                                  Border.all(color: AppColors.darkBorder),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.groups_outlined,
+                                    color: AppColors.primary),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _selectedCommunityId == null
+                                        ? 'No community (personal event)'
+                                        : _myCommunities
+                                            .firstWhere((c) =>
+                                                c.id == _selectedCommunityId,
+                                                orElse: () =>
+                                                    _myCommunities.first)
+                                            .name,
+                                    style: AppTextStyles.bodyMedium,
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right,
+                                    color: AppColors.textSecondary),
+                              ],
+                            ),
+                          ),
+                        ),
+              const SizedBox(height: 24),
+            ],
 
             // Date & time
             const _SectionLabel('Date & Time'),

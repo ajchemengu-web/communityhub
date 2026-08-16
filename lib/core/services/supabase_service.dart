@@ -61,10 +61,29 @@ class SupabaseService {
   }
 
   // ── Google Sign-In ────────────────────────────────────────
+  //
+  // The custom URL scheme only means anything on Android/iOS, where a
+  // registered intent-filter (Android) or URL type (iOS) can catch it
+  // and bring the app back to the foreground. A browser has no such
+  // handler — Supabase would send it right back to
+  // io.communityhub://login-callback after the user picks a Google
+  // account, the browser has nothing to open that with, and the flow
+  // just dead-ends with no error and no redirect. On web this passes
+  // the page's own origin instead, which is what a Supabase OAuth
+  // flow on a single-page app is actually supposed to redirect back
+  // to — supabase_flutter picks the auth code up from the URL itself
+  // on load (detectSessionInUri, already on by default) and exchanges
+  // it for a session.
+  //
+  // For this to work, every origin the app is actually served from
+  // (the production domain and any Vercel preview domains in use)
+  // needs to be added to Supabase Dashboard → Authentication → URL
+  // Configuration → Redirect URLs — Supabase rejects a redirect_to
+  // that isn't on that list.
   Future<bool> signInWithGoogle() async {
     return await client.auth.signInWithOAuth(
       OAuthProvider.google,
-      redirectTo: 'io.communityhub://login-callback',
+      redirectTo: kIsWeb ? Uri.base.origin : 'io.communityhub://login-callback',
     );
   }
 

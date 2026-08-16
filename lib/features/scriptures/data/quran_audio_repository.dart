@@ -28,20 +28,18 @@ class ReciterModel {
 ///
 /// There is no human-recorded Kiswahili translation *audio* per verse
 /// published anywhere (confirmed) — only whole-surah narrations exist,
-/// from the Internet Archive / VideoQuran.net. Two Kiswahili modes are
-/// offered because neither option is strictly better:
-/// - Per-verse: on-device text-to-speech reads that verse's translation
-///   text right after each Arabic verse — true per-verse pacing, but a
-///   synthetic voice (quality/accent depends on the listener's device;
-///   several users found it uncomfortably robotic/mispronounced).
-/// - Full narration: the original human-recorded VideoQuran.net track,
-///   much better voice quality, but can only play as one block for the
-///   whole surah (no per-verse timestamps exist in that recording), so
-///   it plays once after all the Arabic verses finish rather than
-///   interleaved per verse.
-/// See quran_screen.dart's `_speakKiswahiliForAyah` (per-verse) and
-/// `_playFullNarration` (whole-surah), and the `_kiswahiliMode` toggle
-/// that lets the user pick between them.
+/// from the Internet Archive / VideoQuran.net. This used to also offer a
+/// per-verse mode that read the translation aloud via on-device
+/// text-to-speech, interleaved right after each Arabic verse. That was
+/// removed: a synthesized voice reading scripture doesn't sound right to
+/// many listeners — several described it as uncomfortably robotic and
+/// mispronounced, and for East African Kiswahili speakers in particular
+/// it read as clearly artificial rather than a respectful recitation.
+/// The human-recorded VideoQuran.net track is the only Kiswahili option
+/// now: it plays once, after all the Arabic verses finish (no per-verse
+/// timestamps exist in that recording, so it can't be interleaved
+/// per-verse the way the removed TTS mode was). See quran_screen.dart's
+/// `_playFullNarration`.
 class QuranAudioRepository {
   QuranAudioRepository._() {
     _dio = Dio(BaseOptions(
@@ -65,15 +63,6 @@ class QuranAudioRepository {
   static const String arabicRecitationAttribution =
       'Arabic recitation audio courtesy of alquran.cloud / '
       'cdn.islamic.network.';
-
-  /// Shown in per-verse Kiswahili mode, since it's synthesized speech,
-  /// not a human recording — the user should know that, and that
-  /// quality/voice availability depends on their device.
-  static const String kiswahiliTranslationNote =
-      "Kiswahili translation is read aloud by your device's built-in "
-      'text-to-speech, from the Ali Muhsin Al-Barwani Kiswahili '
-      'translation text — no human-recorded per-verse Kiswahili audio '
-      'exists to stream. Voice availability depends on your device.';
 
   /// Attribution required by the full-narration Kiswahili audio's
   /// Creative Commons "Attribution-NonCommercial-NoDerivatives" license.

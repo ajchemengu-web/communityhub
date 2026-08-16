@@ -115,7 +115,7 @@ class _OverviewTab extends ConsumerWidget {
         icon: Icons.error_outline_rounded,
         title: "Couldn't load your shop",
         subtitle: 'Pull down to try again.',
-        onRefresh: () => ref.invalidate(myShopProvider),
+        onRefresh: () async => ref.invalidate(myShopProvider),
       ),
       data: (shop) {
         if (shop == null) {

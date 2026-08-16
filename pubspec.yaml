@@ -35,7 +35,7 @@ dependencies:
 
   # ── Camera & Live ─────────────────────────────────────────
   camera: ^0.11.0+2
-  livekit_client: ^2.8.0
+  livekit_client: ^2.11.0
   # agora_rtc_engine removed — no version satisfies this project's constraints:
   # 6.6.2+ conflicts with flutter_secure_storage on the `ffi` version; 6.5.4 and
   # earlier ship an AAR compiled against android-31, which fails Gradle's AAR

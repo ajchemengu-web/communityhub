@@ -25,28 +25,43 @@ class ProfileDetailRepository {
         .eq('id', userId)
         .maybeSingle();
 
-    // Profile row doesn't exist yet — create a default one
+    // Profile row doesn't exist yet. This can now only really happen
+    // for an OAuth sign-in that hasn't gone through profile setup, or
+    // an environment that hasn't picked up the on_auth_user_created
+    // trigger yet (see 20260816c_auth_atomic_profile_and_email_lockdown.sql,
+    // which makes profile creation atomic with signup going forward).
+    //
+    // Only ever self-heal the CURRENT user's own row here — this used
+    // to create a stub for whatever `userId` was passed in using the
+    // *viewer's* auth email, regardless of whose profile was being
+    // looked at. Viewing another user's profile page when they happen
+    // to have no row (e.g. a stale/orphaned account) would silently
+    // write your own email into a row keyed by their id.
     if (row == null) {
-      final authUser = SupabaseService.client.auth.currentUser;
-      final email = authUser?.email ?? '';
-      final defaultUsername = email.split('@').first;
-      await _db.from('users').upsert({
-        'id': userId,
-        'username': defaultUsername,
-        'full_name': defaultUsername,
-        'email': email,
-        'is_verified': false,
-      });
-      row = await _db
-          .from('users')
-          .select(
-              'id, username, full_name, avatar_url, bio, church_name, website, is_verified, is_private, created_at')
-          .eq('id', userId)
-          .maybeSingle();
+      final currentUid = SupabaseService.currentUserId;
+      if (currentUid != null && currentUid == userId) {
+        final authUser = SupabaseService.client.auth.currentUser;
+        final email = authUser?.email ?? '';
+        final defaultUsername =
+            email.isNotEmpty ? email.split('@').first : 'user_${userId.substring(0, 8)}';
+        await _db.from('users').upsert({
+          'id': userId,
+          'username': defaultUsername,
+          'full_name': defaultUsername,
+          'email': email,
+          'is_verified': false,
+        });
+        row = await _db
+            .from('users')
+            .select(
+                'id, username, full_name, avatar_url, bio, church_name, website, is_verified, is_private, created_at')
+            .eq('id', userId)
+            .maybeSingle();
+      }
       row ??= {
         'id': userId,
-        'username': defaultUsername,
-        'full_name': defaultUsername,
+        'username': 'unknown',
+        'full_name': 'Unknown user',
         'avatar_url': null,
         'bio': null,
         'church_name': null,

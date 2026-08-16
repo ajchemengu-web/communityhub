@@ -1,7 +1,9 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/app_constants.dart';
+import 'secure_local_storage.dart';
 
 /// Singleton wrapper around the Supabase client.
 /// All features access Supabase through this service.
@@ -26,12 +28,31 @@ class SupabaseService {
 
   // ── Initialise (call once in main) ───────────────────────
   static Future<void> initialize() async {
+    // Secure, Keychain/Keystore-backed session storage on the
+    // platforms where flutter_secure_storage works without any extra
+    // native setup. Left as the library default (plain SharedPreferences
+    // via SharedPreferencesLocalStorage) on web — where "secure storage"
+    // is just obfuscated browser storage anyway, no real gain — and on
+    // Windows/Linux desktop, where flutter_secure_storage needs native
+    // dependencies (libsecret on Linux) this app doesn't currently
+    // configure and this project doesn't actively ship to.
+    final useSecureStorage = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS);
+
     await Supabase.initialize(
       url: AppConstants.supabaseUrl,
       publishableKey: AppConstants.supabaseAnonKey,
-      authOptions: const FlutterAuthClientOptions(
+      authOptions: FlutterAuthClientOptions(
         authFlowType: AuthFlowType.pkce,
         autoRefreshToken: true,
+        // Leaving this null on web/desktop lets supabase_flutter fall
+        // back to its own default (SharedPreferencesLocalStorage) —
+        // deliberately not constructing that class ourselves here, so
+        // this doesn't have to track its constructor across package
+        // versions.
+        localStorage: useSecureStorage ? SecureLocalStorage() : null,
       ),
       realtimeClientOptions: const RealtimeClientOptions(
         logLevel: RealtimeLogLevel.info,

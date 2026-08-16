@@ -1,46 +1,45 @@
 import 'package:dio/dio.dart';
 
-/// Metadata for a Quran reciter, sourced from mp3quran.net.
+/// Metadata for a Quran reciter, sourced from alquran.cloud's audio
+/// edition directory (https://alquran.cloud/api) — the same provider
+/// this feature already uses for per-ayah Arabic/English/Kiswahili text
+/// (see quran_screen.dart's `_fetch()`). Using one provider for both
+/// text and audio means every reciter here is guaranteed to expose true
+/// per-ayah (verse-by-verse) audio files, not just whole-surah files —
+/// required for the verse-by-verse playback this screen does.
 class ReciterModel {
-  const ReciterModel({
-    required this.id,
-    required this.name,
-    required this.serverUrl,
-  });
+  const ReciterModel({required this.id, required this.name});
 
-  /// Reciter id — matches mp3quran.net's numeric `id` where the entry
-  /// came from the live API, or a stable short code for bundled entries.
+  /// alquran.cloud audio edition identifier, e.g. "ar.alafasy". This is
+  /// also the path segment cdn.islamic.network expects.
   final String id;
 
   final String name;
-
-  /// Base URL of the reciter's audio server, ending in '/'.
-  /// e.g. https://server8.mp3quran.net/afs/
-  final String serverUrl;
-
-  /// Builds the full-surah recitation URL for [surahNumber] (1..114).
-  String surahAudioUrl(int surahNumber) =>
-      '$serverUrl${surahNumber.toString().padLeft(3, '0')}.mp3';
-
-  factory ReciterModel.fromMp3QuranJson(
-      Map<String, dynamic> reciter, Map<String, dynamic> moshaf) {
-    return ReciterModel(
-      id: '${reciter['id']}',
-      name: reciter['name'] as String? ?? 'Unknown reciter',
-      serverUrl: moshaf['server'] as String,
-    );
-  }
 }
 
-/// Resolves Quran audio for the Scriptures screen: Arabic recitation
-/// (per-surah, from mp3quran.net) and a Swahili translation narration
-/// (per-surah, from the Internet Archive). Both tracks are streamed
-/// directly from their host CDN — nothing is downloaded, re-hosted, or
-/// modified by this app.
+/// Resolves Quran audio for the Scriptures screen.
+///
+/// Arabic recitation is per-ayah (per-verse), streamed directly from
+/// alquran.cloud's audio CDN (cdn.islamic.network) using the reciter's
+/// "versebyverse" edition identifier. This app previously sourced
+/// Arabic audio from mp3quran.net, which only publishes whole-surah
+/// files — fine for "play the whole surah" but unable to support
+/// verse-by-verse playback, which is what this screen needs.
+///
+/// There is no human-recorded Kiswahili translation *audio* per verse
+/// published anywhere (confirmed) — only whole-surah narrations exist
+/// (e.g. the Internet Archive / VideoQuran.net track this screen used
+/// to play after the full Arabic recitation finished). To make the
+/// Kiswahili translation actually follow each Arabic verse immediately,
+/// the Kiswahili side is spoken on-device via text-to-speech from that
+/// verse's translation text instead — see quran_screen.dart's
+/// `_speakSwahiliForAyah`, and the `sw.barwani` (Ali Muhsin Al-Barwani)
+/// Kiswahili text translation fetched in `_fetch()`, the only Kiswahili
+/// edition alquran.cloud publishes.
 class QuranAudioRepository {
   QuranAudioRepository._() {
     _dio = Dio(BaseOptions(
-      baseUrl: 'https://www.mp3quran.net/api/v3',
+      baseUrl: 'https://api.alquran.cloud/v1',
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 10),
     ));
@@ -50,76 +49,53 @@ class QuranAudioRepository {
 
   late final Dio _dio;
 
-  static const String _swahiliTranslationBase =
-      'https://archive.org/download/'
-      'TranslationOfTheMeaningsOfTheNobleQuranInSwahilikiswahilimp3';
-
-  /// Attribution required by the Swahili translation audio's Creative
-  /// Commons "Attribution-NonCommercial-NoDerivatives" license. Shown
-  /// wherever that track plays.
-  static const String swahiliTranslationLicenseNote =
-      'Swahili translation audio: VideoQuran.net, via the Internet '
-      'Archive — CC BY-NC-ND 3.0. Streamed, not redistributed.';
+  static const String _audioCdnBase =
+      'https://cdn.islamic.network/quran/audio';
 
   static const String arabicRecitationAttribution =
-      'Arabic recitation audio courtesy of mp3quran.net.';
+      'Arabic recitation audio courtesy of alquran.cloud / '
+      'cdn.islamic.network.';
 
-  /// Small curated set of well-known reciters, used until (or unless)
-  /// [fetchReciters] can reach the live mp3quran.net directory. Verified
-  /// server URLs as of this feature's build.
+  /// Shown wherever the Kiswahili "recitation" plays, since it's
+  /// synthesized speech, not a human recording — the user should know
+  /// that, and that quality/voice availability depends on their device.
+  static const String kiswahiliTranslationNote =
+      "Kiswahili translation is read aloud by your device's built-in "
+      'text-to-speech, from the Ali Muhsin Al-Barwani Kiswahili '
+      'translation text — no human-recorded per-verse Kiswahili audio '
+      'exists to stream. Voice availability depends on your device.';
+
+  /// Small curated set of reciters with confirmed per-ayah audio, used
+  /// until (or unless) [fetchReciters] can reach the live directory.
+  /// These three match the app's previous curated list (Alafasy,
+  /// Husary, Al-Akhdar) so switching audio providers is invisible to
+  /// anyone who already picked one of them.
   static const List<ReciterModel> fallbackReciters = [
-    ReciterModel(
-      id: '123',
-      name: 'Mishary Alafasy',
-      serverUrl: 'https://server8.mp3quran.net/afs/',
-    ),
-    ReciterModel(
-      id: '118',
-      name: 'Mahmoud Khalil Al-Hussary',
-      serverUrl: 'https://server13.mp3quran.net/husr/',
-    ),
-    ReciterModel(
-      id: '1',
-      name: 'Ibrahim Al-Akhdar',
-      serverUrl: 'https://server6.mp3quran.net/akdr/',
-    ),
+    ReciterModel(id: 'ar.alafasy', name: 'Mishary Alafasy'),
+    ReciterModel(id: 'ar.husary', name: 'Mahmoud Khalil Al-Hussary'),
+    ReciterModel(id: 'ar.ibrahimakhbar', name: 'Ibrahim Al-Akhdar'),
   ];
 
-  /// Fetches the full reciter directory from mp3quran.net. Falls back to
-  /// [fallbackReciters] on any network/parse error, or if the response
-  /// shape ever changes — the player should never be left with zero
-  /// reciters to choose from.
+  /// Fetches the full per-ayah reciter directory from alquran.cloud.
+  /// Falls back to [fallbackReciters] on any network/parse error, or if
+  /// the response shape ever changes — the player should never be left
+  /// with zero reciters to choose from.
   Future<List<ReciterModel>> fetchReciters() async {
     try {
-      final response =
-          await _dio.get('/reciters', queryParameters: {'language': 'eng'});
-      final raw = response.data['reciters'] as List<dynamic>? ?? [];
+      final response = await _dio.get('/edition', queryParameters: {
+        'format': 'audio',
+        'language': 'ar',
+        'type': 'versebyverse',
+      });
+      final raw = response.data['data'] as List<dynamic>? ?? [];
 
       final reciters = <ReciterModel>[];
       for (final r in raw) {
-        final reciter = Map<String, dynamic>.from(r as Map);
-        final moshafList = reciter['moshaf'] as List<dynamic>? ?? [];
-        if (moshafList.isEmpty) continue;
-        final moshafMaps =
-            moshafList.map((m) => Map<String, dynamic>.from(m as Map)).toList();
-        // mp3quran.net doesn't guarantee the standard "Hafs A'n Assem"
-        // riwaya (the transmission almost every reciter records and every
-        // listener expects) is listed first when a reciter has recorded
-        // more than one. Blindly taking moshafList.first broke playback
-        // for Mishary Alafasy (id 123) in particular: his array lists a
-        // rare "Rewayat AlDorai A'n Al-Kisa'ai" riwaya first, and that
-        // server folder doesn't actually have surah 1 (likely most/all
-        // surahs) — it 404s. That surfaced in the app as a misleading
-        // "Could not play audio. Check your internet connection." error,
-        // even though the network and the standard Hafs URL both work
-        // fine (confirmed by hand). Prefer the Hafs riwaya by name; fall
-        // back to the first entry only if a reciter genuinely has none.
-        final moshaf = moshafMaps.firstWhere(
-          (m) => (m['name'] as String? ?? '').toLowerCase().contains('hafs'),
-          orElse: () => moshafMaps.first,
-        );
-        if (moshaf['server'] == null) continue;
-        reciters.add(ReciterModel.fromMp3QuranJson(reciter, moshaf));
+        final edition = Map<String, dynamic>.from(r as Map);
+        final id = edition['identifier'] as String?;
+        final name = edition['englishName'] as String?;
+        if (id == null || name == null) continue;
+        reciters.add(ReciterModel(id: id, name: name));
       }
 
       return reciters.isNotEmpty ? reciters : fallbackReciters;
@@ -130,12 +106,12 @@ class QuranAudioRepository {
     }
   }
 
-  String arabicSurahAudioUrl(ReciterModel reciter, int surahNumber) =>
-      reciter.surahAudioUrl(surahNumber);
-
-  String swahiliTranslationAudioUrl(int surahNumber) {
-    final padded = surahNumber.toString().padLeft(3, '0');
-    return '$_swahiliTranslationBase/'
-        '${padded}VideoQuran.Net-Swahili-Kiswahili-Translation.mp3';
-  }
+  /// Builds the per-ayah recitation URL for [reciter] and a
+  /// QURAN-WIDE ayah number (1..6236 — NOT the in-surah verse number).
+  /// See the 'globalNumber' field populated in quran_screen.dart's
+  /// `_fetch()`, taken from alquran.cloud's ayah `number` field (as
+  /// opposed to `numberInSurah`).
+  String arabicAyahAudioUrl(ReciterModel reciter, int globalAyahNumber,
+          {int bitrate = 128}) =>
+      '$_audioCdnBase/$bitrate/${reciter.id}/$globalAyahNumber.mp3';
 }

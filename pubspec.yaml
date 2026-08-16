@@ -49,6 +49,11 @@ dependencies:
   video_player: ^2.8.7
   chewie: ^1.8.1
   audioplayers: ^6.0.0
+  # Used only for the Quran screen's Kiswahili translation: there is no
+  # human-recorded per-verse Kiswahili narration available anywhere
+  # (verified — only whole-surah files exist), so it's read aloud
+  # on-device instead. See quran_audio_repository.dart.
+  flutter_tts: ^4.2.5
 
   # ── Networking ────────────────────────────────────────────
   dio: ^5.4.3+1

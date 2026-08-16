@@ -4,7 +4,7 @@
   "trailingSlash": false,
   "rewrites": [
     {
-      "source": "/((?!assets/|canvaskit/|icons/|favicon.png|manifest.json|flutter_bootstrap.js|flutter.js|flutter_service_worker.js|version.json).*)",
+      "source": "/((?!assets/|canvaskit/|icons/)(?!.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }
   ],

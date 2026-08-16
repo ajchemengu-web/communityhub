@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,7 +37,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   final _locationCtrl = TextEditingController();
   final _meetingUrlCtrl = TextEditingController();
 
-  File? _coverFile;
+  Uint8List? _coverBytes;
+  String _coverExtension = 'jpg';
   EventType _type = EventType.service;
   bool _isOnline = false;
   DateTime _startTime = DateTime.now().add(const Duration(hours: 1));
@@ -151,7 +152,13 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       imageQuality: 80,
     );
     if (xfile != null) {
-      setState(() => _coverFile = File(xfile.path));
+      final bytes = await xfile.readAsBytes();
+      final ext = xfile.name.contains('.') ? xfile.name.split('.').last : 'jpg';
+      if (!mounted) return;
+      setState(() {
+        _coverBytes = bytes;
+        _coverExtension = ext;
+      });
     }
   }
 
@@ -253,10 +260,10 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       );
 
       // Upload cover if selected
-      if (_coverFile != null) {
+      if (_coverBytes != null) {
         try {
           final url = await EventsRepository.instance
-              .uploadEventCover(_coverFile!, event.id);
+              .uploadEventCover(_coverBytes!, _coverExtension, event.id);
           await SupabaseService.client
               .from('events')
               .update({'cover_url': url}).eq('id', event.id);
@@ -323,7 +330,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           padding: const EdgeInsets.all(20),
           children: [
             // Cover picker
-            _CoverPicker(file: _coverFile, onTap: _pickCover),
+            _CoverPicker(bytes: _coverBytes, onTap: _pickCover),
             const SizedBox(height: 24),
 
             // Title
@@ -511,8 +518,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 // ── Cover picker ───────────────────────────────────────────────────
 
 class _CoverPicker extends StatelessWidget {
-  const _CoverPicker({required this.file, required this.onTap});
-  final File? file;
+  const _CoverPicker({required this.bytes, required this.onTap});
+  final Uint8List? bytes;
   final VoidCallback onTap;
 
   @override
@@ -526,12 +533,12 @@ class _CoverPicker extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
               color: AppColors.darkBorder, style: BorderStyle.solid),
-          image: file != null
+          image: bytes != null
               ? DecorationImage(
-                  image: FileImage(file!), fit: BoxFit.cover)
+                  image: MemoryImage(bytes!), fit: BoxFit.cover)
               : null,
         ),
-        child: file == null
+        child: bytes == null
             ? Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [

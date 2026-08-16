@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -81,9 +79,12 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked != null) {
+      final bytes = await picked.readAsBytes();
+      final ext = picked.name.contains('.') ? picked.name.split('.').last : 'jpg';
+      if (!mounted) return;
       await ref
           .read(chatDetailProvider(widget.chatId).notifier)
-          .sendMediaMessage(File(picked.path), MessageType.image);
+          .sendMediaMessage(bytes, ext, MessageType.image);
       _scrollToBottom();
     }
   }

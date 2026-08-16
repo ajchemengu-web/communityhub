@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../../core/services/supabase_service.dart';
@@ -91,7 +93,15 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               ? _ErrorState(message: _error!, onRetry: _load)
               : _noPublishedPortfolio
                   ? const _EmptyPortfolioState()
-                  : _PortfolioWebView(url: _url!),
+                  // webview_flutter has no web platform implementation
+                  // registered in this project (no webview_flutter_web
+                  // dependency) — embedding would just throw at runtime.
+                  // The web build is already inside a browser, so opening
+                  // the portfolio in a new tab is a perfectly natural
+                  // substitute rather than a degraded one.
+                  : kIsWeb
+                      ? _PortfolioWebOpener(url: _url!)
+                      : _PortfolioWebView(url: _url!),
     );
   }
 }
@@ -155,6 +165,57 @@ class _PortfolioWebViewState extends State<_PortfolioWebView> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Web substitute for [_PortfolioWebView] — opens the portfolio URL in a
+/// new browser tab instead of embedding it, since there's no
+/// webview_flutter_web implementation registered. Auto-opens once on
+/// first build, with a button to reopen if the tab was blocked/closed.
+class _PortfolioWebOpener extends StatefulWidget {
+  const _PortfolioWebOpener({required this.url});
+  final String url;
+
+  @override
+  State<_PortfolioWebOpener> createState() => _PortfolioWebOpenerState();
+}
+
+class _PortfolioWebOpenerState extends State<_PortfolioWebOpener> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _open());
+  }
+
+  void _open() {
+    launchUrl(Uri.parse(widget.url), webOnlyWindowName: '_blank');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.open_in_new_rounded, color: Colors.white38, size: 48),
+            const SizedBox(height: 16),
+            const Text(
+              'Your portfolio opened in a new tab.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 15),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _open,
+              icon: const Icon(Icons.open_in_new_rounded),
+              label: const Text('Open again'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

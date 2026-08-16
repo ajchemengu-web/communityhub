@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../../core/services/supabase_service.dart';
@@ -204,6 +206,15 @@ class _PaymentMethodSheetState extends ConsumerState<_PaymentMethodSheet> {
 
   Future<void> _openPaystackCheckout(String url) async {
     if (!mounted) return;
+    // webview_flutter has no web platform implementation registered in
+    // this project — on web, open Paystack's hosted checkout in a new
+    // tab instead of embedding it. The realtime listener above (not the
+    // webview itself) is what resolves the transaction either way, so
+    // this doesn't lose any completion-detection behavior.
+    if (kIsWeb) {
+      await launchUrl(Uri.parse(url), webOnlyWindowName: '_blank');
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _PaystackCheckoutScreen(url: url),

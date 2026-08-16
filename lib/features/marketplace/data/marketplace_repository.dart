@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -143,10 +143,13 @@ class MarketplaceRepository {
     return ProductModel.fromMap(row);
   }
 
-  Future<String> uploadProductImage(File file, String sellerId) async {
-    final ext = file.path.split('.').last;
-    final path = '$sellerId/${DateTime.now().millisecondsSinceEpoch}.$ext';
-    await _client.storage.from(AppConstants.bucketProductImages).upload(path, file);
+  Future<String> uploadProductImage(
+    Uint8List bytes,
+    String extension,
+    String sellerId,
+  ) async {
+    final path = '$sellerId/${DateTime.now().millisecondsSinceEpoch}.$extension';
+    await _client.storage.from(AppConstants.bucketProductImages).uploadBinary(path, bytes);
     return _client.storage.from(AppConstants.bucketProductImages).getPublicUrl(path);
   }
 
@@ -310,17 +313,20 @@ class MarketplaceRepository {
     return ShopModel.fromMap(row);
   }
 
-  Future<String> uploadShopImage(File file, {required String suffix}) async {
+  Future<String> uploadShopImage(
+    Uint8List bytes,
+    String extension, {
+    required String suffix,
+  }) async {
     final uid = SupabaseService.currentUserId!;
-    final ext = file.path.split('.').last;
     // Deterministic path (banner/logo overwrite in place, mirroring
     // Profolio's own storage convention) instead of a timestamped name,
     // so re-uploading a banner doesn't leave the old one orphaned in the
     // bucket.
-    final path = '$uid/$suffix.$ext';
+    final path = '$uid/$suffix.$extension';
     await _client.storage
         .from(AppConstants.bucketShopImages)
-        .upload(path, file, fileOptions: const FileOptions(upsert: true));
+        .uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
     return _client.storage.from(AppConstants.bucketShopImages).getPublicUrl(path);
   }
 }

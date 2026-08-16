@@ -18,19 +18,34 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="CommunityHub — faith, learning and career communities, events, scripture study, and marketplace in one app.">
+  <meta name="theme-color" content="#0D1117">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="communityhub">
+  <meta name="apple-mobile-web-app-title" content="CommunityHub">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>communityhub</title>
+  <title>CommunityHub</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    Google Sign-In (used by the YouTube-connect feature in
+    reels_screen.dart to request an incremental upload scope) needs a
+    *web* OAuth client id on this platform — the Android/iOS client ids
+    in your Firebase/Google Cloud project don't cover web. Create a Web
+    application OAuth client in Google Cloud Console (APIs & Services →
+    Credentials) with this deployed origin as an authorized JavaScript
+    origin, then uncomment and fill in the line below. Until then,
+    Google Sign-In through Supabase Auth's OAuth redirect (login screen)
+    still works fine on web without this tag — only the YouTube-scope
+    request in reels_screen.dart needs it.
+  -->
+  <!-- <meta name="google-signin-client_id" content="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"> -->
 </head>
 <body>
   <!--

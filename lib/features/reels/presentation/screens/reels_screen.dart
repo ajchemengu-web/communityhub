@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -198,7 +199,11 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
       if ((i + 1) % _userReelFrequency == 0 && reelIndex < userReels.length) {
         result.add(_ReelFeedEntry.userReel(userReels[reelIndex++]));
       }
-      if ((i + 1) % AppConstants.adFrequency == 0) {
+      // google_mobile_ads has no Flutter Web implementation — never
+      // insert ad slides on web (ReelAdOverlay would otherwise try to
+      // load a BannerAd via a platform channel that doesn't exist there
+      // and fail/throw).
+      if (!kIsWeb && (i + 1) % AppConstants.adFrequency == 0) {
         result.add(_ReelFeedEntry.ad());
       }
     }

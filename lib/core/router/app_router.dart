@@ -13,7 +13,7 @@ import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/reels/presentation/screens/reels_screen.dart';
-import '../../features/post/presentation/screens/new_post_screen.dart';
+import 'new_post_route.dart';
 import '../../features/post/presentation/screens/post_detail_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
 import '../../features/events/presentation/screens/events_screen.dart';
@@ -44,12 +44,12 @@ import '../../features/chat/presentation/screens/chat_detail_screen.dart';
 import '../services/youtube_service.dart';
 import '../../features/home/presentation/screens/video_player_screen.dart';
 import '../../features/stories/presentation/screens/story_viewer_screen.dart';
-import '../../features/stories/presentation/screens/story_creator_screen.dart';
+import 'story_route.dart';
 import '../../features/stories/presentation/screens/updates_screen.dart';
 import '../../features/home/domain/models/story_model.dart';
 import '../../features/live/data/live_repository.dart';
 import '../../features/live/presentation/screens/live_host_screen.dart';
-import '../../features/camera/presentation/screens/camera_recorder_screen.dart';
+import 'camera_route.dart';
 import '../../shared/widgets/main_shell.dart';
 
 part 'app_router.g.dart';
@@ -164,7 +164,10 @@ GoRouter appRouter(AppRouterRef ref) {
       // ── Post ──────────────────────────────────────────────────
       GoRoute(
         path: AppRoutes.newPost,
-        builder: (ctx, state) => NewPostScreen(
+        // buildNewPostScreen is a conditional export (see
+        // new_post_route.dart) — native gets the full photo_manager
+        // picker, web gets a separate, simpler image_picker-based flow.
+        builder: (ctx, state) => buildNewPostScreen(
           isReelMode: state.uri.queryParameters['mode'] == 'reel',
         ),
       ),
@@ -367,7 +370,10 @@ GoRouter appRouter(AppRouterRef ref) {
       // ── Stories ───────────────────────────────────────────────
       GoRoute(
         path: '/story/create',
-        builder: (ctx, state) => const StoryCreatorScreen(),
+        // buildStoryCreatorScreen is a conditional export (see
+        // story_route.dart) — web gets a "not available yet" screen
+        // since the creator is built on dart:io + the camera package.
+        builder: (ctx, state) => buildStoryCreatorScreen(),
       ),
       GoRoute(
         path: '/stories/:userId',
@@ -416,10 +422,13 @@ GoRouter appRouter(AppRouterRef ref) {
       // ── Camera recorder ───────────────────────────────────────
       GoRoute(
         path: AppRoutes.cameraRecorder,
+        // buildCameraRecorderScreen is a conditional export (see
+        // camera_route.dart) — native gets the real recorder, web gets
+        // a "not available yet" screen (dart:io + the camera package
+        // aren't available there).
         builder: (ctx, state) {
-          final onSaved =
-              state.extra as void Function(String)? ;
-          return CameraRecorderScreen(onVideoSaved: onSaved);
+          final onSaved = state.extra as void Function(String)?;
+          return buildCameraRecorderScreen(onVideoSaved: onSaved);
         },
       ),
     ],

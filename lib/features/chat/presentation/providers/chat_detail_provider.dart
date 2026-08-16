@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -269,12 +269,16 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
 
   // ── Send media ─────────────────────────────────────────────
 
-  Future<void> sendMediaMessage(File file, MessageType type) async {
+  Future<void> sendMediaMessage(
+    Uint8List bytes,
+    String extension,
+    MessageType type,
+  ) async {
     SupabaseService.currentUserId!; // fail fast if not authenticated
     state = state.copyWith(isSending: true);
 
     try {
-      final url = await _repo.uploadChatMedia(file, conversationId);
+      final url = await _repo.uploadChatMedia(bytes, extension, conversationId);
       final msg = await _repo.sendMessage(
         conversationId: conversationId,
         content: '',

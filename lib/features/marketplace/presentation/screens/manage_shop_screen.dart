@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,8 +29,10 @@ class _ManageShopScreenState extends ConsumerState<ManageShopScreen> {
   final _categoryCtrl = TextEditingController();
   final _picker = ImagePicker();
 
-  File? _bannerFile;
-  File? _logoFile;
+  Uint8List? _bannerBytes;
+  String _bannerExtension = 'jpg';
+  Uint8List? _logoBytes;
+  String _logoExtension = 'jpg';
   String? _existingBannerUrl;
   String? _existingLogoUrl;
   bool _isPublished = false;
@@ -59,13 +61,27 @@ class _ManageShopScreenState extends ConsumerState<ManageShopScreen> {
   Future<void> _pickBanner() async {
     final xfile = await _picker.pickImage(
         source: ImageSource.gallery, maxWidth: 1600, imageQuality: 82);
-    if (xfile != null) setState(() => _bannerFile = File(xfile.path));
+    if (xfile == null) return;
+    final bytes = await xfile.readAsBytes();
+    final ext = xfile.name.contains('.') ? xfile.name.split('.').last : 'jpg';
+    if (!mounted) return;
+    setState(() {
+      _bannerBytes = bytes;
+      _bannerExtension = ext;
+    });
   }
 
   Future<void> _pickLogo() async {
     final xfile = await _picker.pickImage(
         source: ImageSource.gallery, maxWidth: 800, imageQuality: 85);
-    if (xfile != null) setState(() => _logoFile = File(xfile.path));
+    if (xfile == null) return;
+    final bytes = await xfile.readAsBytes();
+    final ext = xfile.name.contains('.') ? xfile.name.split('.').last : 'jpg';
+    if (!mounted) return;
+    setState(() {
+      _logoBytes = bytes;
+      _logoExtension = ext;
+    });
   }
 
   @override
@@ -94,16 +110,16 @@ class _ManageShopScreenState extends ConsumerState<ManageShopScreen> {
                     decoration: BoxDecoration(
                       color: AppColors.darkSurface2,
                       borderRadius: BorderRadius.circular(12),
-                      image: _bannerFile != null
+                      image: _bannerBytes != null
                           ? DecorationImage(
-                              image: FileImage(_bannerFile!), fit: BoxFit.cover)
+                              image: MemoryImage(_bannerBytes!), fit: BoxFit.cover)
                           : _existingBannerUrl != null
                               ? DecorationImage(
                                   image: NetworkImage(_existingBannerUrl!),
                                   fit: BoxFit.cover)
                               : null,
                     ),
-                    child: _bannerFile == null && _existingBannerUrl == null
+                    child: _bannerBytes == null && _existingBannerUrl == null
                         ? const Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -127,12 +143,12 @@ class _ManageShopScreenState extends ConsumerState<ManageShopScreen> {
                       child: CircleAvatar(
                         radius: 32,
                         backgroundColor: AppColors.darkSurface2,
-                        backgroundImage: _logoFile != null
-                            ? FileImage(_logoFile!)
+                        backgroundImage: _logoBytes != null
+                            ? MemoryImage(_logoBytes!)
                             : _existingLogoUrl != null
                                 ? NetworkImage(_existingLogoUrl!) as ImageProvider
                                 : null,
-                        child: _logoFile == null && _existingLogoUrl == null
+                        child: _logoBytes == null && _existingLogoUrl == null
                             ? const Icon(Icons.storefront_rounded,
                                 color: Colors.white38)
                             : null,
@@ -218,12 +234,14 @@ class _ManageShopScreenState extends ConsumerState<ManageShopScreen> {
       final uid = SupabaseService.currentUserId!;
 
       var bannerUrl = _existingBannerUrl;
-      if (_bannerFile != null) {
-        bannerUrl = await repo.uploadShopImage(_bannerFile!, suffix: 'banner');
+      if (_bannerBytes != null) {
+        bannerUrl = await repo.uploadShopImage(_bannerBytes!, _bannerExtension,
+            suffix: 'banner');
       }
       var logoUrl = _existingLogoUrl;
-      if (_logoFile != null) {
-        logoUrl = await repo.uploadShopImage(_logoFile!, suffix: 'logo');
+      if (_logoBytes != null) {
+        logoUrl =
+            await repo.uploadShopImage(_logoBytes!, _logoExtension, suffix: 'logo');
       }
 
       await repo.upsertShop(

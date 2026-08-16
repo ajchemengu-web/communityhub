@@ -342,7 +342,11 @@ class FeedNotifier
           videoCount++;
           taken++;
           addedAny = true;
-          if (videoCount % AppConstants.adFrequency == 0) {
+          // google_mobile_ads has no Flutter Web implementation — never
+          // insert ad slots into the feed on web (NativeAdCard would
+          // otherwise try to load a BannerAd via a platform channel that
+          // doesn't exist there and fail/throw).
+          if (!kIsWeb && videoCount % AppConstants.adFrequency == 0) {
             result.add(const FeedItem(isAd: true));
           }
         }

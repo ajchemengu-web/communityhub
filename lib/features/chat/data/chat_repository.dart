@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import '../../../core/services/block_service.dart';
 import '../../../core/services/supabase_service.dart';
@@ -240,14 +240,17 @@ class ChatRepository {
 
   // ── Upload media for chat ──────────────────────────────────
 
-  Future<String> uploadChatMedia(File file, String conversationId) async {
+  Future<String> uploadChatMedia(
+    Uint8List bytes,
+    String extension,
+    String conversationId,
+  ) async {
     final uid = SupabaseService.currentUserId!;
-    final ext = file.path.split('.').last;
-    final path = 'chat/$conversationId/$uid/${DateTime.now().millisecondsSinceEpoch}.$ext';
+    final path = 'chat/$conversationId/$uid/${DateTime.now().millisecondsSinceEpoch}.$extension';
 
     await SupabaseService.client.storage
         .from('chat_media')
-        .upload(path, file);
+        .uploadBinary(path, bytes);
 
     return SupabaseService.client.storage
         .from('chat_media')

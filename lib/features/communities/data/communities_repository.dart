@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/services/block_service.dart';
@@ -224,7 +224,8 @@ class CommunitiesRepository {
     required String description,
     required String hubType,
     required bool isPrivate,
-    File? coverFile,
+    Uint8List? coverBytes,
+    String coverExtension = 'jpg',
     String? denomination,
     String? location,
     String? website,
@@ -235,16 +236,15 @@ class CommunitiesRepository {
     String? coverUrl;
 
     // Upload cover image
-    if (coverFile != null) {
+    if (coverBytes != null) {
       try {
         await _db.storage.createBucket(
           'community_covers',
           const BucketOptions(public: true),
         );
       } catch (_) {}
-      final ext = coverFile.path.split('.').last;
-      final fileName = '${uid}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-      final bytes = await coverFile.readAsBytes();
+      final fileName = '${uid}_${DateTime.now().millisecondsSinceEpoch}.$coverExtension';
+      final bytes = coverBytes;
       await _db.storage.from('community_covers').uploadBinary(
             'covers/$fileName',
             bytes,

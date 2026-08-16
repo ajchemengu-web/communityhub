@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_constants.dart';
@@ -28,7 +26,7 @@ class NewPostState {
     this.status = NewPostStatus.idle,
     this.caption = '',
     this.hubType = AppConstants.hubAll,
-    this.mediaFiles = const [],
+    this.mediaFiles = const <PostMediaFile>[],
     this.mediaType = 'text',
     this.tags = const [],
     this.youtubeUrl,
@@ -47,7 +45,7 @@ class NewPostState {
   final NewPostStatus status;
   final String caption;
   final String hubType;
-  final List<File> mediaFiles;
+  final List<PostMediaFile> mediaFiles;
   final String mediaType;
   final List<String> tags;
   final String? youtubeUrl;
@@ -73,7 +71,7 @@ class NewPostState {
     NewPostStatus? status,
     String? caption,
     String? hubType,
-    List<File>? mediaFiles,
+    List<PostMediaFile>? mediaFiles,
     String? mediaType,
     List<String>? tags,
     String? youtubeUrl,
@@ -118,7 +116,8 @@ class NewPostNotifier extends StateNotifier<NewPostState> {
 
   void setCaption(String v) => state = state.copyWith(caption: v);
   void setHub(String hub) => state = state.copyWith(hubType: hub);
-  void setTextOnly() => state = state.copyWith(mediaFiles: [], mediaType: 'text');
+  void setTextOnly() =>
+      state = state.copyWith(mediaFiles: const <PostMediaFile>[], mediaType: 'text');
   void setYoutubeUrl(String? url) => state = state.copyWith(youtubeUrl: url);
   void setAiGenerated(bool v) => state = state.copyWith(isAiGenerated: v);
   void setReelMode(bool v) => state = state.copyWith(isReel: v);
@@ -168,21 +167,23 @@ class NewPostNotifier extends StateNotifier<NewPostState> {
     );
   }
 
+  /// Restores the text portion of a saved draft (caption, hub, tags,
+  /// YouTube link). Media is intentionally NOT restored — see
+  /// [DraftRepository]'s class doc for why: a saved draft never carries
+  /// bytes, only a `had_media` flag the picker screen can use to prompt
+  /// "you had media attached — please re-select it".
   void loadFromDraft(Map<String, dynamic> draft) {
     state = state.copyWith(
       caption: draft['caption'] as String? ?? '',
       hubType: draft['hub_type'] as String? ?? AppConstants.hubAll,
-      mediaFiles: ((draft['media_file_paths'] as List?) ?? [])
-          .map((p) => File(p as String))
-          .toList(),
       mediaType: draft['media_type'] as String? ?? 'text',
       tags: ((draft['tags'] as List?) ?? []).cast<String>(),
       youtubeUrl: draft['youtube_url'] as String?,
     );
   }
 
-  void addMedia(List<File> files, String type) {
-    final current = List<File>.from(state.mediaFiles);
+  void addMedia(List<PostMediaFile> files, String type) {
+    final current = List<PostMediaFile>.from(state.mediaFiles);
     current.addAll(files);
     // Limit to 10 items
     state = state.copyWith(
@@ -192,7 +193,7 @@ class NewPostNotifier extends StateNotifier<NewPostState> {
   }
 
   void removeMedia(int index) {
-    final files = List<File>.from(state.mediaFiles)..removeAt(index);
+    final files = List<PostMediaFile>.from(state.mediaFiles)..removeAt(index);
     state = state.copyWith(
       mediaFiles: files,
       mediaType: files.isEmpty ? 'text' : state.mediaType,
@@ -201,9 +202,9 @@ class NewPostNotifier extends StateNotifier<NewPostState> {
 
   /// Swaps the first media file for an edited/composited version (baked-in
   /// filter, brightness, text/sticker overlays) produced by the Edit step.
-  void replaceFirstMedia(File file) {
+  void replaceFirstMedia(PostMediaFile file) {
     if (state.mediaFiles.isEmpty) return;
-    final files = List<File>.from(state.mediaFiles);
+    final files = List<PostMediaFile>.from(state.mediaFiles);
     files[0] = file;
     state = state.copyWith(mediaFiles: files);
   }

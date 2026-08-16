@@ -1,14 +1,24 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:v_video_compressor/v_video_compressor.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/block_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/models/comment_model.dart';
+import 'video_compressor.dart';
+
+/// A media item queued for upload — bytes-based so it works identically
+/// on web (`XFile.readAsBytes()`) and native (`File.readAsBytes()`),
+/// unlike the old `dart:io` `File`-based API which couldn't compile for
+/// Flutter Web at all.
+class PostMediaFile {
+  const PostMediaFile({required this.bytes, required this.extension});
+
+  final Uint8List bytes;
+  final String extension;
+}
 
 /// Handles all Supabase interactions for post creation, comments, and
 /// individual post fetches.
@@ -27,7 +37,7 @@ class PostRepository {
   Future<String> createPost({
     required String caption,
     required String hubType,
-    List<File> mediaFiles = const [],
+    List<PostMediaFile> mediaFiles = const [],
     String mediaType = 'text',
     List<String> tags = const [],
     String? youtubeUrl,
@@ -46,16 +56,18 @@ class PostRepository {
 
     // 1. Upload media to Supabase storage
     for (var i = 0; i < mediaFiles.length; i++) {
-      final file = mediaFiles[i];
-      final ext = file.path.split('.').last.toLowerCase();
+      final media = mediaFiles[i];
+      final ext = media.extension.toLowerCase();
       final isVideo = ext == 'mp4' || ext == 'mov';
       final fileName = '${uid}_${DateTime.now().millisecondsSinceEpoch}_$i.$ext';
       final contentType = isVideo ? 'video/mp4' : 'image/jpeg';
 
       // Compress before upload — cuts upload size/time and data usage
-      // significantly on slower connections.
-      final uploadFile = isVideo ? await _compressVideo(file) : await _compressImage(file);
-      final bytes = await uploadFile.readAsBytes();
+      // significantly on slower connections. Video compression is a
+      // no-op on web (see video_compressor_stub.dart).
+      final bytes = isVideo
+          ? await compressVideoBytes(media.bytes)
+          : await _compressImageBytes(media.bytes);
 
       await _db.storage.from(AppConstants.bucketPostMedia).uploadBinary(
             'posts/$fileName',
@@ -159,37 +171,20 @@ class PostRepository {
     }
   }
 
-  /// Compresses an image before upload. Falls back to the original file
-  /// if compression fails for any reason — this should never block a post.
-  Future<File> _compressImage(File file) async {
+  /// Compresses image bytes before upload. Falls back to the original
+  /// bytes if compression fails for any reason — this should never block
+  /// a post. `compressWithList` is a pure bytes-in/bytes-out API that
+  /// works identically on web and native, so no temp files are needed.
+  Future<Uint8List> _compressImageBytes(Uint8List bytes) async {
     try {
-      final dir = await getTemporaryDirectory();
-      final targetPath =
-          '${dir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final result = await FlutterImageCompress.compressAndGetFile(
-        file.path,
-        targetPath,
+      return await FlutterImageCompress.compressWithList(
+        bytes,
         quality: 80,
         minWidth: 1440,
         minHeight: 1440,
       );
-      return result != null ? File(result.path) : file;
     } catch (_) {
-      return file;
-    }
-  }
-
-  /// Compresses a video before upload. Falls back to the original file
-  /// if compression fails for any reason — this should never block a post.
-  Future<File> _compressVideo(File file) async {
-    try {
-      final result = await VVideoCompressor().compressVideo(
-        file.path,
-        const VVideoCompressionConfig.medium(),
-      );
-      return result != null ? File(result.compressedFilePath) : file;
-    } catch (_) {
-      return file;
+      return bytes;
     }
   }
 

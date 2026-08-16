@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,9 +56,12 @@ class _CreateCommunityScreenState
       imageQuality: 85,
     );
     if (picked != null) {
+      final bytes = await picked.readAsBytes();
+      final ext = picked.name.contains('.') ? picked.name.split('.').last : 'jpg';
+      if (!mounted) return;
       ref
           .read(createCommunityProvider.notifier)
-          .setCoverFile(File(picked.path));
+          .setCover(bytes, extension: ext);
     }
   }
 
@@ -132,11 +135,11 @@ class _CreateCommunityScreenState
           children: [
             // ── Cover image picker ─────────────────────────────
             _CoverPicker(
-              file: state.coverFile,
+              bytes: state.coverBytes,
               onTap: isUploading ? null : _pickCover,
               onRemove: isUploading
                   ? null
-                  : () => notifier.setCoverFile(null),
+                  : () => notifier.setCover(null),
             ),
 
             const SizedBox(height: 8),
@@ -316,12 +319,12 @@ class _CreateCommunityScreenState
 
 class _CoverPicker extends StatelessWidget {
   const _CoverPicker({
-    required this.file,
+    required this.bytes,
     required this.onTap,
     required this.onRemove,
   });
 
-  final File? file;
+  final Uint8List? bytes;
   final VoidCallback? onTap;
   final VoidCallback? onRemove;
 
@@ -335,8 +338,8 @@ class _CoverPicker extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (file != null)
-              Image.file(file!, fit: BoxFit.cover)
+            if (bytes != null)
+              Image.memory(bytes!, fit: BoxFit.cover)
             else
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -390,7 +393,7 @@ class _CoverPicker extends StatelessWidget {
             ),
 
             // Remove button
-            if (file != null)
+            if (bytes != null)
               Positioned(
                 top: 8,
                 right: 8,
@@ -409,7 +412,7 @@ class _CoverPicker extends StatelessWidget {
               ),
 
             // Edit overlay when image exists
-            if (file != null)
+            if (bytes != null)
               Positioned(
                 bottom: 8,
                 right: 12,

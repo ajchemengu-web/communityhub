@@ -69,31 +69,33 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
     super.dispose();
   }
 
+  /// Restores the text portion of a saved draft. Media is never
+  /// persisted (see [DraftRepository]'s class doc), so if the draft had
+  /// media attached (`had_media`), the caption/tags/etc. are restored
+  /// but the flow lands back on the picker step so the user can
+  /// re-select their photo/video rather than jumping straight to Share
+  /// with no media selected.
   Future<void> _loadDraft() async {
     final draft = await DraftRepository.instance.loadDraft();
     if (draft == null || !mounted) return;
 
-    final paths = ((draft['media_file_paths'] as List?) ?? []).cast<String>();
-    File? file;
-    Uint8List? thumb;
-    if (paths.isNotEmpty) {
-      file = File(paths.first);
-      if (draft['media_type'] != 'video') {
-        try {
-          thumb = await file.readAsBytes();
-        } catch (_) {}
-      }
-    }
-    if (!mounted) return;
-
     ref.read(newPostProvider.notifier).loadFromDraft(draft);
     _captionCtrl.text = draft['caption'] as String? ?? '';
 
+    final hadMedia = draft['had_media'] as bool? ?? false;
+    if (!mounted) return;
     setState(() {
-      _selectedFile = file;
-      _thumbnailBytes = thumb;
-      _step = _Step.share;
+      _selectedFile = null;
+      _thumbnailBytes = null;
+      _step = hadMedia ? _Step.picker : _Step.share;
     });
+    if (hadMedia && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Your draft had media attached — please re-select it.'),
+        ),
+      );
+    }
   }
 
   Future<void> _saveDraft() async {
@@ -101,7 +103,7 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
     await DraftRepository.instance.saveDraft(
       caption: state.caption,
       hubType: state.hubType,
-      mediaFilePaths: state.mediaFiles.map((f) => f.path).toList(),
+      hadMedia: state.mediaFiles.isNotEmpty,
       mediaType: state.mediaType,
       tags: state.tags,
       youtubeUrl: state.youtubeUrl,
@@ -119,8 +121,11 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
       _thumbnailBytes = thumb;
       _step = _Step.edit;
     });
+    final bytes = await file.readAsBytes();
+    final ext = file.path.contains('.') ? file.path.split('.').last : 'jpg';
+    if (!mounted) return;
     ref.read(newPostProvider.notifier).addMedia(
-      [file],
+      [PostMediaFile(bytes: bytes, extension: ext)],
       asset.type == AssetType.video ? 'video' : 'image',
     );
   }
@@ -133,7 +138,12 @@ class _NewPostScreenState extends ConsumerState<NewPostScreen> {
   Future<void> _onEditNext(File? editedFile) async {
     if (editedFile != null) {
       final bytes = await editedFile.readAsBytes();
-      ref.read(newPostProvider.notifier).replaceFirstMedia(editedFile);
+      final ext = editedFile.path.contains('.')
+          ? editedFile.path.split('.').last
+          : 'jpg';
+      ref
+          .read(newPostProvider.notifier)
+          .replaceFirstMedia(PostMediaFile(bytes: bytes, extension: ext));
       if (!mounted) return;
       setState(() {
         _selectedFile = editedFile;

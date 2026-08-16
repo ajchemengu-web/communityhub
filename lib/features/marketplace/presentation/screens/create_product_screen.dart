@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,7 +35,8 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
   final _picker = ImagePicker();
 
   ProductType _type = ProductType.merch;
-  File? _imageFile;
+  Uint8List? _imageBytes;
+  String _imageExtension = 'jpg';
   String? _existingImageUrl;
   bool _isSubmitting = false;
 
@@ -72,7 +73,14 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
       maxWidth: 1280,
       imageQuality: 80,
     );
-    if (xfile != null) setState(() => _imageFile = File(xfile.path));
+    if (xfile == null) return;
+    final bytes = await xfile.readAsBytes();
+    final ext = xfile.name.contains('.') ? xfile.name.split('.').last : 'jpg';
+    if (!mounted) return;
+    setState(() {
+      _imageBytes = bytes;
+      _imageExtension = ext;
+    });
   }
 
   @override
@@ -95,16 +103,16 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
               decoration: BoxDecoration(
                 color: AppColors.darkSurface2,
                 borderRadius: BorderRadius.circular(12),
-                image: _imageFile != null
+                image: _imageBytes != null
                     ? DecorationImage(
-                        image: FileImage(_imageFile!), fit: BoxFit.cover)
+                        image: MemoryImage(_imageBytes!), fit: BoxFit.cover)
                     : _existingImageUrl != null
                         ? DecorationImage(
                             image: NetworkImage(_existingImageUrl!),
                             fit: BoxFit.cover)
                         : null,
               ),
-              child: _imageFile == null && _existingImageUrl == null
+              child: _imageBytes == null && _existingImageUrl == null
                   ? const Center(
                       child: Icon(Icons.add_photo_alternate_outlined,
                           color: Colors.white38, size: 32),
@@ -201,8 +209,10 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
       final stock = int.tryParse(_stockCtrl.text.trim());
 
       List<String>? images;
-      if (_imageFile != null) {
-        images = [await repo.uploadProductImage(_imageFile!, uid)];
+      if (_imageBytes != null) {
+        images = [
+          await repo.uploadProductImage(_imageBytes!, _imageExtension, uid)
+        ];
       } else if (!_isEditing) {
         images = const [];
       } // else: editing with no new image picked -- leave images untouched

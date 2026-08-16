@@ -1,4 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+import '../../../core/constants/app_constants.dart';
 
 /// Metadata for a Quran reciter, sourced from alquran.cloud's audio
 /// edition directory (https://alquran.cloud/api) — the same provider
@@ -60,6 +63,29 @@ class QuranAudioRepository {
       'https://archive.org/download/'
       'TranslationOfTheMeaningsOfTheNobleQuranInSwahilikiswahilimp3';
 
+  /// Web-only. `audioplayers`' web backend sets `crossOrigin="anonymous"`
+  /// on every `<audio>` element it creates — unconditionally, with no
+  /// public option to turn it off (see bluefireteam/audioplayers's
+  /// wrapped_player.dart; it's there to support stereo-panning). That
+  /// makes the browser require an `Access-Control-Allow-Origin` header
+  /// on the audio response, which neither cdn.islamic.network nor
+  /// archive.org send. This is exactly what broke Quran playback on the
+  /// web build: the browser console showed "Access to audio ... has been
+  /// blocked by CORS policy" for the Arabic CDN, and the Kiswahili
+  /// narration would have hit the identical wall the first time anyone
+  /// played a surah through to the end, since it comes from a different
+  /// host with the same missing header. Both play back fine as a plain
+  /// browser navigation, and on mobile there's no CORS concept at all —
+  /// this only bites the web build specifically.
+  ///
+  /// Routes web playback through a Supabase Edge Function
+  /// (quran-audio-proxy) that fetches the same bytes server-side and
+  /// relays them with CORS headers attached. Mobile keeps hitting the
+  /// CDNs directly — no reason to add a network hop where it isn't
+  /// needed.
+  static const String _webProxyBase =
+      '${AppConstants.supabaseUrl}/functions/v1/quran-audio-proxy';
+
   static const String arabicRecitationAttribution =
       'Arabic recitation audio courtesy of alquran.cloud / '
       'cdn.islamic.network.';
@@ -118,12 +144,29 @@ class QuranAudioRepository {
   /// `_fetch()`, taken from alquran.cloud's ayah `number` field (as
   /// opposed to `numberInSurah`).
   String arabicAyahAudioUrl(ReciterModel reciter, int globalAyahNumber,
-          {int bitrate = 128}) =>
-      '$_audioCdnBase/$bitrate/${reciter.id}/$globalAyahNumber.mp3';
+      {int bitrate = 128}) {
+    if (kIsWeb) {
+      return Uri.parse(_webProxyBase).replace(queryParameters: {
+        'type': 'arabic',
+        'bitrate': '$bitrate',
+        'reciter': reciter.id,
+        'ayah': '$globalAyahNumber',
+        'apikey': AppConstants.supabaseAnonKey,
+      }).toString();
+    }
+    return '$_audioCdnBase/$bitrate/${reciter.id}/$globalAyahNumber.mp3';
+  }
 
   /// The whole-surah, human-narrated Kiswahili translation track (see
   /// class doc) — used by "full narration" mode.
   String swahiliTranslationAudioUrl(int surahNumber) {
+    if (kIsWeb) {
+      return Uri.parse(_webProxyBase).replace(queryParameters: {
+        'type': 'kiswahili',
+        'surah': '$surahNumber',
+        'apikey': AppConstants.supabaseAnonKey,
+      }).toString();
+    }
     final padded = surahNumber.toString().padLeft(3, '0');
     return '$_swahiliTranslationBase/'
         '${padded}VideoQuran.Net-Swahili-Kiswahili-Translation.mp3';

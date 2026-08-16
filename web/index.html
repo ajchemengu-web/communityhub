@@ -56,6 +56,22 @@
     try/catch in _getYouTubeToken()) until a real client id is set.
   -->
   <meta name="google-signin-client_id" content="000000000000-placeholder00000000000000.apps.googleusercontent.com">
+
+  <!--
+    The `passkeys` package is pulled in transitively (via supabase_flutter
+    → gotrue's optional WebAuthn support) — nothing in this app's own code
+    uses it. Same story as google_sign_in_web above: Flutter registers it
+    on every web build regardless of actual usage, and its web plugin
+    (passkeys_web) requires this JS SDK to be present or it throws
+    "Cannot read properties of undefined (reading 'init')" trying to call
+    PasskeyAuthenticator.init() on an object that was never loaded — which
+    is the exact uncaught error that was blanking the whole app on boot.
+    Required per https://pub.dev/packages/passkeys web setup instructions.
+  -->
+  <script
+    src="https://github.com/corbado/flutter-passkeys/releases/download/2.4.0/bundle.js"
+    type="application/javascript"
+  ></script>
 </head>
 <body>
   <!--

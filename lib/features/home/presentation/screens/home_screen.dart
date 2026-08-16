@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -443,12 +444,22 @@ class _FeedTabState extends ConsumerState<_FeedTab>
             // The leading LiveStreamsRow (and its "+1" item/index offset)
             // was removed along with the live-streaming feature; see the
             // note on the "Go Live" button above.
-            itemCount: items.length + (_isLoadingMore ? 1 : 0),
+            // +1 for the loading spinner while a page is in flight, +1 for
+            // the debug-only "why did scrolling stop" footer once the feed
+            // provider reports hasMore == false (debug builds only — see
+            // _DebugFeedEndFooter).
+            itemCount: items.length +
+                (_isLoadingMore ? 1 : 0) +
+                (kDebugMode &&
+                        !_isLoadingMore &&
+                        !ref.read(feedProvider(widget.hubType).notifier).hasMore
+                    ? 1
+                    : 0),
             separatorBuilder: (_, __) =>
                 const Divider(height: 1, color: AppColors.darkBorder),
             itemBuilder: (ctx, i) {
               final itemIndex = i;
-              if (itemIndex == items.length) {
+              if (itemIndex == items.length && _isLoadingMore) {
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(
@@ -461,6 +472,14 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                       ),
                     ),
                   ),
+                );
+              }
+              if (itemIndex >= items.length) {
+                // Only reachable in debug builds (see itemCount above) —
+                // shows exactly why every hub stopped: genuinely out of
+                // pages, or repeatedly failing with some real error.
+                return _DebugFeedEndFooter(
+                  notifier: ref.read(feedProvider(widget.hubType).notifier),
                 );
               }
               final item = items[itemIndex];
@@ -487,6 +506,60 @@ class _FeedTabState extends ConsumerState<_FeedTab>
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Debug-build-only footer shown once a feed tab genuinely stops loading
+/// more (`hasMore == false`) — makes "why did scrolling stop" answerable
+/// from the device itself: either every hub really is out of pages
+/// (nothing to see here), or one or more kept failing and got marked
+/// exhausted, in which case the actual error each hit is right here
+/// instead of needing `flutter logs`/logcat to find out. Never shown in
+/// release builds (see the kDebugMode-gated itemCount above) — this is
+/// purely a development aid.
+class _DebugFeedEndFooter extends StatelessWidget {
+  const _DebugFeedEndFooter({required this.notifier});
+  final FeedNotifier notifier;
+
+  @override
+  Widget build(BuildContext context) {
+    final errors = notifier.hubLastErrors;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            '[debug] Feed stopped loading more — hasMore is false.',
+            style: TextStyle(
+                color: Colors.orangeAccent,
+                fontSize: 11,
+                fontWeight: FontWeight.w700),
+          ),
+          if (errors.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'No hub ever errored — every hub genuinely ran out of '
+                'YouTube results for its current query.',
+                style: TextStyle(color: Colors.white38, fontSize: 11),
+              ),
+            )
+          else
+            ...errors.entries.map((e) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '${e.key}: ${e.value}',
+                    style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 11,
+                        fontFamily: 'monospace'),
+                  ),
+                )),
+        ],
       ),
     );
   }

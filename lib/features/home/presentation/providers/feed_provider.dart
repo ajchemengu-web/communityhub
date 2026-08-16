@@ -64,6 +64,14 @@ class FeedNotifier
   List<String> _hubs = const [];
   String _hubType = AppConstants.hubAll;
 
+  // The most recent error each hub hit, whether or not it went on to
+  // exhaust that hub — surfaced (debug builds only, see home_screen.dart)
+  // so a stuck/short feed can actually be diagnosed from the device
+  // itself instead of guessing blind. debugPrint alone requires pulling
+  // `flutter logs`/logcat, which isn't always practical to get to.
+  final Map<String, String> _hubLastErrors = {};
+  Map<String, String> get hubLastErrors => Map.unmodifiable(_hubLastErrors);
+
   int get _totalVideos =>
       _hubBuffers.values.fold(0, (sum, list) => sum + list.length);
 
@@ -118,6 +126,7 @@ class FeedNotifier
     _hubCounts.clear();
     _exhaustedHubs.clear();
     _hubConsecutiveFailures.clear();
+    _hubLastErrors.clear();
     _isLoadingMore = false;
     _hubType = hubType;
     _hubs = _hubSetFor(hubType);
@@ -209,6 +218,7 @@ class FeedNotifier
       // retrying instead of hammering the API forever.
       final failures = (_hubConsecutiveFailures[hub] ?? 0) + 1;
       _hubConsecutiveFailures[hub] = failures;
+      _hubLastErrors[hub] = e.toString();
       if (failures >= _maxConsecutiveFailures) {
         debugPrint(
           '[HomeFeed] hub=$hub fetch failed $failures times in a row, '

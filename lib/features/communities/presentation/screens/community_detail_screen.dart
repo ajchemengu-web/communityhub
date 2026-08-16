@@ -46,17 +46,14 @@ class _CommunityDetailScreenState
   void _openChannel(CommunityModel c, CommunityChannelModel ch) {
     final isAnnouncements = ch.channelType == 'announcements';
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => _CommunityChannelScreen(
+      builder: (_) => CommunityChannelScreen(
         communityId: c.id,
         channelName: ch.name,
         channelIcon: isAnnouncements
             ? Icons.campaign_rounded
             : Icons.chat_bubble_outline_rounded,
         iconColor: isAnnouncements ? const Color(0xFF1A7A6B) : Colors.grey,
-        communityName: c.name,
         isAnnouncements: isAnnouncements,
-        isModerator: c.isModerator,
-        communityId2: widget.communityId,
       ),
     ));
   }
@@ -94,30 +91,24 @@ class _CommunityDetailScreenState
 
   void _openAnnouncements(CommunityModel c) {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => _CommunityChannelScreen(
+      builder: (_) => CommunityChannelScreen(
         communityId: c.id,
         channelName: 'Announcements',
         channelIcon: Icons.campaign_rounded,
         iconColor: const Color(0xFF1A7A6B),
-        communityName: c.name,
         isAnnouncements: true,
-        isModerator: c.isModerator,
-        communityId2: widget.communityId,
       ),
     ));
   }
 
   void _openGeneralChannel(CommunityModel c) {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => _CommunityChannelScreen(
+      builder: (_) => CommunityChannelScreen(
         communityId: c.id,
         channelName: 'General',
         channelIcon: Icons.chat_bubble_outline_rounded,
         iconColor: Colors.grey,
-        communityName: c.name,
         isAnnouncements: false,
-        isModerator: c.isModerator,
-        communityId2: widget.communityId,
       ),
     ));
   }
@@ -446,14 +437,30 @@ class _CommunityDetailScreenState
 
           // ── Members preview ──────────────────────────────────────
           if (state.members.isNotEmpty) ...[
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 20, 16, 6),
-              child: Text(
-                'Members',
-                style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Members',
+                    style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  GestureDetector(
+                    onTap: () =>
+                        context.push('/community/${c.id}/members'),
+                    child: const Text(
+                      'See all',
+                      style: TextStyle(
+                          color: AppColors.primaryLight,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
               ),
             ),
             SizedBox(
@@ -1038,33 +1045,37 @@ class _ManageGroupRow extends StatelessWidget {
 // Community Channel / Chat Screen
 // ─────────────────────────────────────────────────────────────────
 
-class _CommunityChannelScreen extends ConsumerStatefulWidget {
-  const _CommunityChannelScreen({
+/// A single community channel's chat-style view. Reachable both by
+/// pushing directly from [CommunityDetailScreen] (which already has a
+/// loaded [CommunityModel] to hand over) and, for the Announcements
+/// channel specifically, as the standalone `/community/:communityId/
+/// announcements` route (see app_router.dart) -- which only ever has
+/// the raw [communityId] from the URL, not a pre-loaded model. So
+/// `isModerator` is derived here from [communityDetailProvider]
+/// rather than being a required constructor param, letting both call
+/// sites share one widget.
+class CommunityChannelScreen extends ConsumerStatefulWidget {
+  const CommunityChannelScreen({
+    super.key,
     required this.communityId,
-    required this.communityId2,
     required this.channelName,
     required this.channelIcon,
     required this.iconColor,
-    required this.communityName,
     required this.isAnnouncements,
-    required this.isModerator,
   });
   final String communityId;
-  final String communityId2;
   final String channelName;
   final IconData channelIcon;
   final Color iconColor;
-  final String communityName;
   final bool isAnnouncements;
-  final bool isModerator;
 
   @override
-  ConsumerState<_CommunityChannelScreen> createState() =>
+  ConsumerState<CommunityChannelScreen> createState() =>
       _CommunityChannelScreenState();
 }
 
 class _CommunityChannelScreenState
-    extends ConsumerState<_CommunityChannelScreen> {
+    extends ConsumerState<CommunityChannelScreen> {
   final _msgCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   bool _sending = false;
@@ -1080,17 +1091,15 @@ class _CommunityChannelScreenState
 
   Future<void> _loadMessages() async {
     if (widget.isAnnouncements) {
-      final state = ref.read(communityDetailProvider(widget.communityId2));
-      for (final a in state.announcements) {
-        _messages.add({
-          'text': '**${a.title}**\n${a.content}',
-          'sender': a.authorName ?? 'Admin',
-          'time': a.createdAt,
-          'isMe': false,
-          'isSystem': true,
-        });
-      }
-      if (mounted) setState(() {});
+      // Rendered directly from the watched provider state in build()
+      // (communityDetailProvider(...).announcements) instead of copied
+      // into local state here. That keeps this screen correct whether
+      // it's reached from CommunityDetailScreen (provider already
+      // warm) or fresh via the standalone
+      // /community/:communityId/announcements route (provider still
+      // loading at initState time) -- a one-time copy taken here would
+      // be empty in the second case and never update.
+      return;
     } else {
       // General channel — load community posts as messages
       try {
@@ -1126,15 +1135,25 @@ class _CommunityChannelScreenState
     _msgCtrl.clear();
 
     final uid = SupabaseService.currentUserId;
+    final isModerator = ref
+            .read(communityDetailProvider(widget.communityId))
+            .community
+            ?.isModerator ??
+        false;
 
-    if (widget.isAnnouncements && widget.isModerator) {
-      // Post as announcement
+    if (widget.isAnnouncements && isModerator) {
+      // Post as announcement. postAnnouncement() already updates
+      // communityDetailProvider's state.announcements, and build()
+      // renders this screen's message list straight from that watched
+      // state, so — unlike the community-post branch below — no
+      // manual local append is needed here.
       await ref
-          .read(communityDetailProvider(widget.communityId2).notifier)
+          .read(communityDetailProvider(widget.communityId).notifier)
           .postAnnouncement(
               title: text.split('\n').first,
               content: text,
               isPinned: false);
+      setState(() => _sending = false);
     } else {
       // Post as community post
       try {
@@ -1145,18 +1164,18 @@ class _CommunityChannelScreenState
           'media_type': 'text',
         });
       } catch (_) {}
-    }
 
-    setState(() {
-      _messages.add({
-        'text': text,
-        'sender': 'You',
-        'time': DateTime.now(),
-        'isMe': true,
-        'isSystem': false,
+      setState(() {
+        _messages.add({
+          'text': text,
+          'sender': 'You',
+          'time': DateTime.now(),
+          'isMe': true,
+          'isSystem': false,
+        });
+        _sending = false;
       });
-      _sending = false;
-    });
+    }
 
     await Future.delayed(const Duration(milliseconds: 100));
     if (_scrollCtrl.hasClients) {
@@ -1177,7 +1196,29 @@ class _CommunityChannelScreenState
 
   @override
   Widget build(BuildContext context) {
-    final canSend = !widget.isAnnouncements || widget.isModerator;
+    final detailState = ref.watch(communityDetailProvider(widget.communityId));
+    final community = detailState.community;
+    final isModerator = community?.isModerator ?? false;
+    final communityName = community?.name ?? '';
+    final canSend = !widget.isAnnouncements || isModerator;
+
+    // Announcements render straight from the watched provider state so
+    // this rebuilds automatically both when the initial fetch finishes
+    // (fresh route) and when a new announcement is posted. The General
+    // channel keeps using the locally-loaded _messages (see
+    // _loadMessages()), since community posts aren't part of this
+    // provider's state.
+    final displayMessages = widget.isAnnouncements
+        ? detailState.announcements
+            .map<Map<String, dynamic>>((a) => {
+                  'text': '**${a.title}**\n${a.content}',
+                  'sender': a.authorName ?? 'Admin',
+                  'time': a.createdAt,
+                  'isMe': false,
+                  'isSystem': true,
+                })
+            .toList()
+        : _messages;
 
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
@@ -1204,7 +1245,7 @@ class _CommunityChannelScreenState
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.communityName,
+                Text(communityName,
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 15,
@@ -1217,7 +1258,7 @@ class _CommunityChannelScreenState
           ],
         ),
         actions: [
-          if (widget.isModerator)
+          if (isModerator)
             IconButton(
               icon: const Icon(Icons.person_add_outlined, color: Colors.white),
               onPressed: () {
@@ -1237,20 +1278,20 @@ class _CommunityChannelScreenState
         children: [
           // ── Chat messages ──────────────────────────────────────
           Expanded(
-            child: _messages.isEmpty
+            child: displayMessages.isEmpty
                 ? _WelcomeCard(
-                    communityName: widget.communityName,
+                    communityName: communityName,
                     isAnnouncements: widget.isAnnouncements,
                     communityId: widget.communityId,
-                    isModerator: widget.isModerator,
+                    isModerator: isModerator,
                   )
                 : ListView.builder(
                     controller: _scrollCtrl,
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 8),
-                    itemCount: _messages.length,
+                    itemCount: displayMessages.length,
                     itemBuilder: (_, i) {
-                      final msg = _messages[i];
+                      final msg = displayMessages[i];
                       return _ChatBubble(
                         text: msg['text'] as String,
                         sender: msg['sender'] as String,

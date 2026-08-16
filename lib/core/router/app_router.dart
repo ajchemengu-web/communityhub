@@ -22,6 +22,7 @@ import '../../features/events/presentation/screens/create_event_screen.dart';
 import '../../features/chat/presentation/screens/call_screen.dart';
 import '../../features/communities/presentation/screens/communities_screen.dart';
 import '../../features/communities/presentation/screens/community_detail_screen.dart';
+import '../../features/communities/presentation/screens/community_members_screen.dart';
 import '../../features/communities/presentation/screens/create_community_screen.dart';
 import '../../features/my_church/presentation/my_church_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
@@ -179,6 +180,22 @@ GoRouter appRouter(AppRouterRef ref) {
         path: '/community/:communityId',
         builder: (ctx, state) => CommunityDetailScreen(
           communityId: state.pathParameters['communityId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.communityMembers,
+        builder: (ctx, state) => CommunityMembersScreen(
+          communityId: state.pathParameters['communityId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.communityAnnouncements,
+        builder: (ctx, state) => CommunityChannelScreen(
+          communityId: state.pathParameters['communityId']!,
+          channelName: 'Announcements',
+          channelIcon: Icons.campaign_rounded,
+          iconColor: const Color(0xFF1A7A6B),
+          isAnnouncements: true,
         ),
       ),
       GoRoute(

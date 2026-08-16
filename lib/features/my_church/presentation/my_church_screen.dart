@@ -372,14 +372,18 @@ class _QuickActions extends StatelessWidget {
           _QuickAction(
             icon: Icons.campaign_outlined,
             label: 'Announcements',
-            onTap: () =>
-                context.push('/community/${church.id}?tab=announcements'),
+            // These used to link to '/community/:id?tab=announcements' and
+            // '?tab=members' -- CommunityDetailScreen never read a `tab`
+            // query param, so both quick actions silently just opened the
+            // generic community page. Point at the real dedicated routes
+            // instead (see AppRoutes.communityAnnouncements/communityMembers,
+            // now registered in app_router.dart).
+            onTap: () => context.push('/community/${church.id}/announcements'),
           ),
           _QuickAction(
             icon: Icons.people_outline,
             label: 'Members',
-            onTap: () =>
-                context.push('/community/${church.id}?tab=members'),
+            onTap: () => context.push('/community/${church.id}/members'),
           ),
           _QuickAction(
             icon: Icons.volunteer_activism_outlined,

@@ -204,6 +204,29 @@ class CommunityDetailNotifier
     }
     state = state.copyWith(announcements: updated);
   }
+
+  // ── Member management (admin/moderator only — RLS-enforced) ──────
+
+  Future<void> updateMemberRole(String userId, String newRole) async {
+    await _repo.updateMemberRole(communityId, userId, newRole);
+    final updated = state.members.map((m) {
+      final u = m['users'] as Map<String, dynamic>?;
+      if (u != null && u['id'] == userId) {
+        return {...m, 'role': newRole};
+      }
+      return m;
+    }).toList();
+    state = state.copyWith(members: updated);
+  }
+
+  Future<void> removeMember(String userId) async {
+    await _repo.removeMember(communityId, userId);
+    final updated = state.members.where((m) {
+      final u = m['users'] as Map<String, dynamic>?;
+      return u == null || u['id'] != userId;
+    }).toList();
+    state = state.copyWith(members: updated);
+  }
 }
 
 // ── Provider ───────────────────────────────────────────────────

@@ -488,6 +488,35 @@ class CommunitiesRepository {
         .eq('user_id', userId);
   }
 
+  // ── Member role management ────────────────────────────────
+  // These are thin wrappers -- the real security boundary is the
+  // "Admins/moderators can update other members" / "...can remove
+  // other members" RLS policies on community_members, which only let
+  // an approved admin or moderator act on another member's row.
+
+  /// Changes [userId]'s role within [communityId] (e.g. promote a
+  /// member to moderator, or demote a moderator back to member).
+  Future<void> updateMemberRole(
+    String communityId,
+    String userId,
+    String newRole,
+  ) async {
+    await _db
+        .from('community_members')
+        .update({'role': newRole})
+        .eq('community_id', communityId)
+        .eq('user_id', userId);
+  }
+
+  /// Removes [userId] from [communityId] entirely.
+  Future<void> removeMember(String communityId, String userId) async {
+    await _db
+        .from('community_members')
+        .delete()
+        .eq('community_id', communityId)
+        .eq('user_id', userId);
+  }
+
   // ── Channels (groups) ─────────────────────────────────────
 
   /// Returns all channels for a community.

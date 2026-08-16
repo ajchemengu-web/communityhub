@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/data/bible_books.dart';
+import '../../data/bible_versions.dart';
 
 class BibleScreen extends StatefulWidget {
   const BibleScreen({super.key});
@@ -251,6 +252,7 @@ class _VerseScreenState extends State<_VerseScreen> {
   List<Map<String, dynamic>> _verses = [];
   bool _loading = true;
   String? _error;
+  BibleVersion _version = bibleVersions.first; // defaults to KJV
 
   @override
   void initState() {
@@ -261,17 +263,67 @@ class _VerseScreenState extends State<_VerseScreen> {
   Future<void> _fetch() async {
     setState(() { _loading = true; _error = null; });
     try {
-      // bible-api.com — free, no key required
-      final bookEncoded = Uri.encodeComponent(widget.book.name);
-      final url =
-          'https://bible-api.com/$bookEncoded+${widget.chapter}?translation=kjv';
+      // cdn.jsdelivr.net mirror of github.com/wldeh/bible-api — free, no
+      // key required. Same provider for every version in bibleVersions
+      // (see bible_versions.dart), so switching translations is just a
+      // different 'id' in the URL.
+      final url = _version.chapterUrl(widget.book.name, widget.chapter);
       final res = await Dio().get(url);
       final verses =
-          (res.data['verses'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+          (res.data['data'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
       setState(() { _verses = verses; _loading = false; });
+    } on DioException catch (e) {
+      setState(() {
+        _error = e.response?.statusCode == 404
+            ? '${widget.book.name} ${widget.chapter} isn\'t available in '
+                '${_version.abbreviation} yet. Try a different translation.'
+            : 'Could not load verses. Check your internet connection.';
+        _loading = false;
+      });
     } catch (e) {
       setState(() { _error = 'Could not load verses. Check your internet connection.'; _loading = false; });
     }
+  }
+
+  void _pickVersion() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C2230),
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('Choose translation',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+            ),
+            ...bibleVersions.map((v) {
+              return ListTile(
+                title: Text(v.abbreviation,
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w700)),
+                subtitle: Text(v.name,
+                    style: const TextStyle(
+                        color: Colors.white38, fontSize: 12)),
+                trailing: v.id == _version.id
+                    ? const Icon(Icons.check, color: Color(0xFFD4A847))
+                    : null,
+                onTap: () {
+                  Navigator.pop(context);
+                  if (v.id == _version.id) return;
+                  setState(() => _version = v);
+                  _fetch();
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -286,6 +338,12 @@ class _VerseScreenState extends State<_VerseScreen> {
             style: const TextStyle(
                 color: Colors.white, fontWeight: FontWeight.w700)),
         actions: [
+          TextButton(
+            onPressed: _pickVersion,
+            child: Text(_version.abbreviation,
+                style: const TextStyle(
+                    color: Color(0xFFD4A847), fontWeight: FontWeight.w700)),
+          ),
           if (!_loading)
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.white54),
@@ -310,12 +368,23 @@ class _VerseScreenState extends State<_VerseScreen> {
                                 color: Colors.white54, fontSize: 14, height: 1.6),
                             textAlign: TextAlign.center),
                         const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: _fetch,
-                          style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFD4A847)),
-                          child: const Text('Retry',
-                              style: TextStyle(color: Colors.black)),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ElevatedButton(
+                              onPressed: _fetch,
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFD4A847)),
+                              child: const Text('Retry',
+                                  style: TextStyle(color: Colors.black)),
+                            ),
+                            const SizedBox(width: 12),
+                            OutlinedButton(
+                              onPressed: _pickVersion,
+                              child: const Text('Change translation',
+                                  style: TextStyle(color: Colors.white70)),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -326,7 +395,7 @@ class _VerseScreenState extends State<_VerseScreen> {
                   itemCount: _verses.length,
                   itemBuilder: (_, i) {
                     final v = _verses[i];
-                    final num = v['verse'] as int? ?? (i + 1);
+                    final num = int.tryParse('${v['verse'] ?? ''}') ?? (i + 1);
                     final text = (v['text'] as String? ?? '').trim();
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 10),

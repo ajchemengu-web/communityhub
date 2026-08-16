@@ -186,12 +186,22 @@ class _SurahList extends StatelessWidget {
   }
 }
 
-/// Which part of the CURRENT verse's playback is active. Playback is
-/// per-ayah: Arabic recitation audio for verse N, then (once that
-/// finishes) the Kiswahili translation of verse N spoken via
-/// text-to-speech, then verse N+1's Arabic, and so on — see
-/// _playAyah/_speakKiswahiliForAyah below.
-enum _AyahAudioPhase { arabic, kiswahili }
+/// Which part of the current playback is active.
+/// - arabic / kiswahili: per-verse playback (verse N's Arabic, then
+///   verse N's Kiswahili spoken via TTS, then verse N+1's Arabic...).
+/// - fullNarration: the human-recorded whole-surah Kiswahili track,
+///   played once after ALL the Arabic verses finish (see _KiswahiliMode
+///   below — there's no per-verse timestamp data in that recording, so
+///   it can't be interleaved the way TTS can).
+enum _AyahAudioPhase { arabic, kiswahili, fullNarration }
+
+/// How the Kiswahili translation is delivered. Both exist because
+/// neither is strictly better: TTS gives true per-verse pacing but a
+/// synthetic, sometimes uncomfortably robotic voice; the human
+/// recording sounds far better but can only play as one whole-surah
+/// block, same as before per-verse playback existed. See
+/// quran_audio_repository.dart's class doc for the full explanation.
+enum _KiswahiliMode { perVerse, fullNarration }
 
 class _SurahDetailScreen extends StatefulWidget {
   const _SurahDetailScreen({required this.surah});
@@ -219,6 +229,11 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
   ReciterModel _reciter = QuranAudioRepository.fallbackReciters.first;
   int? _ayahIndex; // index into _ayahs of the verse currently loaded
   _AyahAudioPhase? _phase;
+  // Defaults to the human-recorded full narration: several users found
+  // the per-verse TTS voice uncomfortably robotic/mispronounced, so the
+  // better-sounding (but whole-surah-only) option is the default;
+  // per-verse is one tap away for anyone who wants strict verse pacing.
+  _KiswahiliMode _kiswahiliMode = _KiswahiliMode.fullNarration;
   bool _sequential = true; // auto-advance verse -> verse, Arabic -> Kiswahili
   bool _speaking = false; // true while the TTS engine is actively speaking
   PlayerState _playerState = PlayerState.stopped;
@@ -226,6 +241,12 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
   Duration _duration = Duration.zero;
   bool _audioBusy = false;
   String? _audioError;
+
+  // True whenever the bottom player bar should be shown — per-verse
+  // playback (tracked via _ayahIndex) or the whole-surah full narration
+  // (which has no per-verse index of its own).
+  bool get _isPlayerActive =>
+      _ayahIndex != null || _phase == _AyahAudioPhase.fullNarration;
 
   // Bumped on every stop/new-play/reciter-change; callbacks (TTS
   // completion, the timeout safety net) compare against this to ignore
@@ -295,15 +316,35 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
     _player.onPlayerComplete.listen((_) {
       if (!mounted) return;
       if (_phase == _AyahAudioPhase.arabic && _ayahIndex != null) {
-        if (_sequential) {
-          _speakKiswahiliForAyah(_ayahIndex!);
-        } else {
+        if (!_sequential) {
           setState(() {
             _ayahIndex = null;
             _phase = null;
             _position = Duration.zero;
           });
+          return;
         }
+        if (_kiswahiliMode == _KiswahiliMode.perVerse) {
+          _speakKiswahiliForAyah(_ayahIndex!);
+        } else {
+          // Full-narration mode: keep chaining through the Arabic
+          // verses only; once the LAST verse's Arabic finishes, play
+          // the whole-surah Kiswahili narration once (see class docs
+          // on _AyahAudioPhase / _KiswahiliMode for why it can't be
+          // interleaved per verse).
+          final next = _ayahIndex! + 1;
+          if (next < _ayahs.length) {
+            _playAyah(next);
+          } else {
+            _playFullNarration();
+          }
+        }
+      } else if (_phase == _AyahAudioPhase.fullNarration) {
+        setState(() {
+          _ayahIndex = null;
+          _phase = null;
+          _position = Duration.zero;
+        });
       }
     });
   }
@@ -422,6 +463,51 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
     }
   }
 
+  /// Plays the human-recorded, whole-surah Kiswahili narration once —
+  /// used by full-narration mode after all Arabic verses have played.
+  /// [_ayahIndex] is deliberately left as the last verse's index (rather
+  /// than cleared) while this plays, so the bottom player bar stays
+  /// visible via [_isPlayerActive] and prev/next verse controls stay
+  /// meaningful if the user backs out of full narration mid-playback.
+  Future<void> _playFullNarration() async {
+    final token = ++_playToken;
+    final url = QuranAudioRepository.instance
+        .swahiliTranslationAudioUrl(widget.surah.number);
+    setState(() {
+      _phase = _AyahAudioPhase.fullNarration;
+      _audioBusy = true;
+      _audioError = null;
+      _position = Duration.zero;
+      _duration = Duration.zero;
+    });
+    try {
+      try {
+        await _player.stop();
+      } catch (_) {
+        // Nothing was playing — fine to ignore.
+      }
+      if (token != _playToken) return;
+      try {
+        await _player.play(UrlSource(url));
+      } catch (e) {
+        debugPrint(
+            'Kiswahili full-narration playback error, retrying once (surah ${widget.surah.number}): $e');
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (token != _playToken) return;
+        await _player.play(UrlSource(url));
+      }
+    } catch (e) {
+      debugPrint(
+          'Kiswahili full-narration playback error (surah ${widget.surah.number}): $e');
+      if (!mounted || token != _playToken) return;
+      setState(() {
+        _audioError = 'Could not play audio. Check your internet connection.';
+      });
+    } finally {
+      if (mounted && token == _playToken) setState(() => _audioBusy = false);
+    }
+  }
+
   /// Speaks verse [index]'s Kiswahili translation via on-device
   /// text-to-speech — see quran_audio_repository.dart for why there's no
   /// human-recorded per-verse Kiswahili audio to play instead.
@@ -480,11 +566,12 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
   }
 
   Future<void> _togglePlayPause() async {
-    if (_ayahIndex == null) {
+    if (!_isPlayerActive) {
       await _playAyah(0);
       return;
     }
-    if (_phase == _AyahAudioPhase.arabic) {
+    if (_phase == _AyahAudioPhase.arabic ||
+        _phase == _AyahAudioPhase.fullNarration) {
       if (_playerState == PlayerState.playing) {
         await _player.pause();
       } else {
@@ -573,35 +660,62 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
     super.dispose();
   }
 
-  /// Single entry point: starts verse 1's Arabic recitation, then (per
-  /// [_sequential], which stays on) auto-continues into that verse's
-  /// Kiswahili translation, then verse 2's Arabic, and so on through the
-  /// whole surah — Arabic and Kiswahili interleaved per verse, not the
-  /// whole surah's Arabic followed by the whole surah's Kiswahili.
+  /// Single entry point: starts verse 1's Arabic recitation. What
+  /// happens for Kiswahili after that depends on [_kiswahiliMode] (see
+  /// the toggle below this button): per-verse speaks each verse's
+  /// Kiswahili right after its Arabic; full-narration keeps chaining
+  /// through every verse's Arabic first, then plays the human-recorded
+  /// Kiswahili narration once at the end.
   Widget _buildAudioQuickActions() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () => _playAyah(0),
-              icon: const Icon(Icons.play_arrow_rounded, size: 22),
-              label: const Text('Play Recitation + Kiswahili (per verse)'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4CAF50),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _playAyah(0),
+                  icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                  label: const Text('Play Recitation + Kiswahili'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4CAF50),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _pickReciter,
+                icon: const Icon(Icons.person_outline, color: Colors.white38),
+                tooltip: 'Choose reciter',
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: _pickReciter,
-            icon: const Icon(Icons.person_outline, color: Colors.white38),
-            tooltip: 'Choose reciter',
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Text('Kiswahili:',
+                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+              const SizedBox(width: 8),
+              _KiswahiliModeChip(
+                label: 'Full narration',
+                selected: _kiswahiliMode == _KiswahiliMode.fullNarration,
+                onTap: () =>
+                    setState(() => _kiswahiliMode = _KiswahiliMode.fullNarration),
+              ),
+              const SizedBox(width: 6),
+              _KiswahiliModeChip(
+                label: 'Per verse',
+                selected: _kiswahiliMode == _KiswahiliMode.perVerse,
+                onTap: () =>
+                    setState(() => _kiswahiliMode = _KiswahiliMode.perVerse),
+              ),
+            ],
           ),
         ],
       ),
@@ -610,12 +724,15 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
 
   Widget _buildAudioPlayerBar() {
     final isArabic = _phase == _AyahAudioPhase.arabic;
+    final isFullNarration = _phase == _AyahAudioPhase.fullNarration;
     final verseNo = _ayahIndex != null ? _ayahs[_ayahIndex!]['number'] : null;
-    final label = _ayahIndex == null
-        ? ''
-        : isArabic
-            ? '${_reciter.name} · Verse $verseNo · Recitation'
-            : 'Verse $verseNo · Kiswahili translation (speech)';
+    final label = isFullNarration
+        ? 'Kiswahili full narration'
+        : _ayahIndex == null
+            ? ''
+            : isArabic
+                ? '${_reciter.name} · Verse $verseNo · Recitation'
+                : 'Verse $verseNo · Kiswahili translation (speech)';
     final totalMs = _duration.inMilliseconds > 0 ? _duration.inMilliseconds : 1;
     final posMs = _position.inMilliseconds.clamp(0, totalMs);
 
@@ -651,7 +768,7 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                     style: const TextStyle(color: Colors.white38, fontSize: 11)),
               ],
             ),
-            if (isArabic)
+            if (isArabic || isFullNarration)
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 2,
@@ -682,7 +799,9 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
-                  onPressed: (_ayahIndex != null && _ayahIndex! > 0)
+                  onPressed: (!isFullNarration &&
+                          _ayahIndex != null &&
+                          _ayahIndex! > 0)
                       ? () => _playAyah(_ayahIndex! - 1)
                       : null,
                   icon: const Icon(Icons.skip_previous_rounded,
@@ -700,8 +819,10 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                               strokeWidth: 2, color: Color(0xFF4CAF50)),
                         )
                       : Icon(
-                          (isArabic && _playerState == PlayerState.playing) ||
-                                  (!isArabic && _speaking)
+                          ((isArabic || isFullNarration) &&
+                                      _playerState == PlayerState.playing) ||
+                                  (_phase == _AyahAudioPhase.kiswahili &&
+                                      _speaking)
                               ? Icons.pause_circle_filled
                               : Icons.play_circle_filled,
                           color: const Color(0xFF4CAF50)),
@@ -713,7 +834,8 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                   tooltip: 'Stop',
                 ),
                 IconButton(
-                  onPressed: (_ayahIndex != null &&
+                  onPressed: (!isFullNarration &&
+                          _ayahIndex != null &&
                           _ayahIndex! < _ayahs.length - 1)
                       ? () => _playAyah(_ayahIndex! + 1)
                       : null,
@@ -726,11 +848,16 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 2),
               child: Text(
-                isArabic
-                    ? 'Kiswahili follows this verse automatically'
-                    : (_ayahIndex != null && _ayahIndex! < _ayahs.length - 1)
-                        ? 'Speaking Kiswahili · next verse follows automatically'
-                        : 'Speaking Kiswahili · last verse of this surah',
+                isFullNarration
+                    ? 'Playing the full Kiswahili narration'
+                    : isArabic
+                        ? (_kiswahiliMode == _KiswahiliMode.perVerse
+                            ? 'Kiswahili follows this verse automatically'
+                            : 'Kiswahili narration plays once all verses finish')
+                        : (_ayahIndex != null &&
+                                _ayahIndex! < _ayahs.length - 1)
+                            ? 'Speaking Kiswahili · next verse follows automatically'
+                            : 'Speaking Kiswahili · last verse of this surah',
                 style: const TextStyle(
                     color: Color(0xFF4CAF50),
                     fontSize: 10,
@@ -741,9 +868,11 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Text(
-                isArabic
-                    ? QuranAudioRepository.arabicRecitationAttribution
-                    : QuranAudioRepository.kiswahiliTranslationNote,
+                isFullNarration
+                    ? QuranAudioRepository.swahiliTranslationLicenseNote
+                    : isArabic
+                        ? QuranAudioRepository.arabicRecitationAttribution
+                        : QuranAudioRepository.kiswahiliTranslationNote,
                 style: const TextStyle(color: Colors.white24, fontSize: 9),
                 textAlign: TextAlign.center,
                 maxLines: 2,
@@ -904,7 +1033,46 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                     ),
                   ],
                 ),
-      bottomNavigationBar: _ayahIndex == null ? null : _buildAudioPlayerBar(),
+      bottomNavigationBar: _isPlayerActive ? _buildAudioPlayerBar() : null,
+    );
+  }
+}
+
+/// Small pill toggle used to pick [_KiswahiliMode] — deliberately plain
+/// (not a Flutter ChoiceChip) to keep full control over sizing/colors to
+/// match this screen's compact audio-actions row.
+class _KiswahiliModeChip extends StatelessWidget {
+  const _KiswahiliModeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF1A6B4A) : const Color(0xFF0F2040),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: selected ? const Color(0xFF4CAF50) : Colors.white24),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+              color: selected ? Colors.white : Colors.white38,
+              fontSize: 11,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500),
+        ),
+      ),
     );
   }
 }

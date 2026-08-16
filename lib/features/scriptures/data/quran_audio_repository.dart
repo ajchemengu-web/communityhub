@@ -27,15 +27,21 @@ class ReciterModel {
 /// verse-by-verse playback, which is what this screen needs.
 ///
 /// There is no human-recorded Kiswahili translation *audio* per verse
-/// published anywhere (confirmed) — only whole-surah narrations exist
-/// (e.g. the Internet Archive / VideoQuran.net track this screen used
-/// to play after the full Arabic recitation finished). To make the
-/// Kiswahili translation actually follow each Arabic verse immediately,
-/// the Kiswahili side is spoken on-device via text-to-speech from that
-/// verse's translation text instead — see quran_screen.dart's
-/// `_speakSwahiliForAyah`, and the `sw.barwani` (Ali Muhsin Al-Barwani)
-/// Kiswahili text translation fetched in `_fetch()`, the only Kiswahili
-/// edition alquran.cloud publishes.
+/// published anywhere (confirmed) — only whole-surah narrations exist,
+/// from the Internet Archive / VideoQuran.net. Two Kiswahili modes are
+/// offered because neither option is strictly better:
+/// - Per-verse: on-device text-to-speech reads that verse's translation
+///   text right after each Arabic verse — true per-verse pacing, but a
+///   synthetic voice (quality/accent depends on the listener's device;
+///   several users found it uncomfortably robotic/mispronounced).
+/// - Full narration: the original human-recorded VideoQuran.net track,
+///   much better voice quality, but can only play as one block for the
+///   whole surah (no per-verse timestamps exist in that recording), so
+///   it plays once after all the Arabic verses finish rather than
+///   interleaved per verse.
+/// See quran_screen.dart's `_speakKiswahiliForAyah` (per-verse) and
+/// `_playFullNarration` (whole-surah), and the `_kiswahiliMode` toggle
+/// that lets the user pick between them.
 class QuranAudioRepository {
   QuranAudioRepository._() {
     _dio = Dio(BaseOptions(
@@ -52,18 +58,29 @@ class QuranAudioRepository {
   static const String _audioCdnBase =
       'https://cdn.islamic.network/quran/audio';
 
+  static const String _swahiliTranslationBase =
+      'https://archive.org/download/'
+      'TranslationOfTheMeaningsOfTheNobleQuranInSwahilikiswahilimp3';
+
   static const String arabicRecitationAttribution =
       'Arabic recitation audio courtesy of alquran.cloud / '
       'cdn.islamic.network.';
 
-  /// Shown wherever the Kiswahili "recitation" plays, since it's
-  /// synthesized speech, not a human recording — the user should know
-  /// that, and that quality/voice availability depends on their device.
+  /// Shown in per-verse Kiswahili mode, since it's synthesized speech,
+  /// not a human recording — the user should know that, and that
+  /// quality/voice availability depends on their device.
   static const String kiswahiliTranslationNote =
       "Kiswahili translation is read aloud by your device's built-in "
       'text-to-speech, from the Ali Muhsin Al-Barwani Kiswahili '
       'translation text — no human-recorded per-verse Kiswahili audio '
       'exists to stream. Voice availability depends on your device.';
+
+  /// Attribution required by the full-narration Kiswahili audio's
+  /// Creative Commons "Attribution-NonCommercial-NoDerivatives" license.
+  /// Shown whenever that track plays.
+  static const String swahiliTranslationLicenseNote =
+      'Kiswahili full narration: VideoQuran.net, via the Internet '
+      'Archive — CC BY-NC-ND 3.0. Streamed, not redistributed.';
 
   /// Small curated set of reciters with confirmed per-ayah audio, used
   /// until (or unless) [fetchReciters] can reach the live directory.
@@ -114,4 +131,12 @@ class QuranAudioRepository {
   String arabicAyahAudioUrl(ReciterModel reciter, int globalAyahNumber,
           {int bitrate = 128}) =>
       '$_audioCdnBase/$bitrate/${reciter.id}/$globalAyahNumber.mp3';
+
+  /// The whole-surah, human-narrated Kiswahili translation track (see
+  /// class doc) — used by "full narration" mode.
+  String swahiliTranslationAudioUrl(int surahNumber) {
+    final padded = surahNumber.toString().padLeft(3, '0');
+    return '$_swahiliTranslationBase/'
+        '${padded}VideoQuran.Net-Swahili-Kiswahili-Translation.mp3';
+  }
 }

@@ -837,10 +837,13 @@ class _ManageGroupsScreenState
                     fontSize: 15,
                     fontWeight: FontWeight.w500)),
           ),
-          const Divider(color: Colors.white10, height: 1),
+          // Matches the divider above (indent: 72, clearing the 48px icon
+          // + its padding) -- this one was full-width before, which read
+          // as an inconsistency between the two rows immediately above.
+          const Divider(color: Colors.white10, height: 1, indent: 72),
 
           const Padding(
-            padding: EdgeInsets.fromLTRB(16, 6, 16, 4),
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -851,7 +854,7 @@ class _ManageGroupsScreenState
           ),
 
           const Padding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -869,49 +872,70 @@ class _ManageGroupsScreenState
               padding: EdgeInsets.all(24),
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (_channels.isEmpty) ...[
-            // No channels in DB yet — show the two defaults
-            const _ManageGroupRow(
-              icon: Icons.campaign_rounded,
-              iconBg: Color(0xFF1A7A6B),
-              name: 'Announcements',
-              subtitle: '',
-              canRemove: false,
-            ),
-            _ManageGroupRow(
-              icon: Icons.chat_bubble_outline_rounded,
-              iconBg: Colors.grey.shade700,
-              name: 'General',
-              subtitle: '',
-              canRemove: false,
-            ),
-          ] else
-            ..._channels.map((ch) {
-              final isAnnouncements =
-                  ch.channelType == 'announcements' || ch.isDefault && ch.name == 'Announcements';
-              final isDefaultChannel = ch.isDefault;
-              return _ManageGroupRow(
-                icon: isAnnouncements
-                    ? Icons.campaign_rounded
-                    : Icons.chat_bubble_outline_rounded,
-                iconBg: isAnnouncements
-                    ? const Color(0xFF1A7A6B)
-                    : Colors.grey.shade700,
-                name: ch.name,
-                subtitle: '',
-                canRemove: !isDefaultChannel,
-                onRemove: isDefaultChannel
-                    ? null
-                    : () async {
-                        await CommunitiesRepository.instance
-                            .deleteChannel(ch.id);
-                        setState(() => _channels.remove(ch));
-                      },
-              );
-            }),
+          else
+            // Each row previously butted straight up against the next
+            // with no divider or gap at all (unlike the "Create new
+            // group" / "Add existing groups" rows above, which at least
+            // have a hairline between them) -- _withRowDividers gives
+            // this list the same breathing room.
+            ..._withRowDividers(_channels.isEmpty
+                ? [
+                    // No channels in DB yet — show the two defaults
+                    const _ManageGroupRow(
+                      icon: Icons.campaign_rounded,
+                      iconBg: Color(0xFF1A7A6B),
+                      name: 'Announcements',
+                      subtitle: '',
+                      canRemove: false,
+                    ),
+                    _ManageGroupRow(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      iconBg: Colors.grey.shade700,
+                      name: 'General',
+                      subtitle: '',
+                      canRemove: false,
+                    ),
+                  ]
+                : _channels.map((ch) {
+                    final isAnnouncements = ch.channelType ==
+                            'announcements' ||
+                        ch.isDefault && ch.name == 'Announcements';
+                    final isDefaultChannel = ch.isDefault;
+                    return _ManageGroupRow(
+                      icon: isAnnouncements
+                          ? Icons.campaign_rounded
+                          : Icons.chat_bubble_outline_rounded,
+                      iconBg: isAnnouncements
+                          ? const Color(0xFF1A7A6B)
+                          : Colors.grey.shade700,
+                      name: ch.name,
+                      subtitle: '',
+                      canRemove: !isDefaultChannel,
+                      onRemove: isDefaultChannel
+                          ? null
+                          : () async {
+                              await CommunitiesRepository.instance
+                                  .deleteChannel(ch.id);
+                              setState(() => _channels.remove(ch));
+                            },
+                    );
+                  }).toList()),
         ],
       ),
     );
+  }
+
+  /// Inserts a hairline divider (matching the style already used above
+  /// this list) between consecutive rows, none after the last one.
+  static List<Widget> _withRowDividers(List<Widget> rows) {
+    if (rows.length <= 1) return rows;
+    return [
+      for (var i = 0; i < rows.length; i++) ...[
+        rows[i],
+        if (i != rows.length - 1)
+          const Divider(color: Colors.white10, height: 1, indent: 72),
+      ],
+    ];
   }
 
   void _showCreateGroup(BuildContext context) {
@@ -1015,6 +1039,12 @@ class _ManageGroupRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      // ListTile has no vertical content padding by default, so with a
+      // 48px leading icon the row only ever grows exactly tall enough to
+      // fit it -- rows read as cramped, especially stacked back-to-back.
+      // A little vertical padding gives each row some air without
+      // changing the horizontal rhythm shared with the rows above.
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       leading: Container(
         width: 48,
         height: 48,

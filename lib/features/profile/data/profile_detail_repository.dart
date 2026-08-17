@@ -515,15 +515,23 @@ class ProfileDetailRepository {
     String? website,
     String? avatarUrl,
   }) async {
-    final updates = <String, dynamic>{};
+    final updates = <String, dynamic>{'id': userId};
     if (fullName != null) updates['full_name'] = fullName;
     if (username != null) updates['username'] = username;
     if (bio != null) updates['bio'] = bio;
     if (churchName != null) updates['church_name'] = churchName;
     if (website != null) updates['website'] = website;
     if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
-    if (updates.isEmpty) return;
+    if (updates.length <= 1) return; // nothing but id -- nothing to save
 
-    await _db.from('users').update(updates).eq('id', userId);
+    // upsert, not update: a plain UPDATE silently matches zero rows (no
+    // error at all) for any account whose public.users row never got
+    // created by the signup trigger -- exactly the orphaned-account bug
+    // fixed by 20260817b_backfill_missing_user_profiles.sql. The edit
+    // screen always sends fullName+username together (see _save() in
+    // edit_profile_screen.dart), so the NOT NULL columns are always
+    // present here even if this ends up being the INSERT branch for an
+    // account that still has no row.
+    await _db.from('users').upsert(updates);
   }
 }

@@ -466,6 +466,8 @@ class _NotifAvatar extends StatelessWidget {
   const _NotifAvatar({required this.notification});
   final NotificationModel notification;
 
+  bool get _hasAvatar => notification.actorAvatar?.isNotEmpty ?? false;
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -474,12 +476,20 @@ class _NotifAvatar extends StatelessWidget {
         CircleAvatar(
           radius: 24,
           backgroundColor: AppColors.darkSurface,
-          backgroundImage: notification.actorAvatar != null
-              ? CachedNetworkImageProvider(notification.actorAvatar!)
-              : null,
-          child: notification.actorAvatar == null
-              ? Text(_initial, style: AppTextStyles.titleSmall)
-              : null,
+          // avatar_url defaults to '' (not null) for most accounts in
+          // this database -- checking `!= null` alone let an empty
+          // string through as if it were a real URL, which
+          // CachedNetworkImageProvider then silently fails to load,
+          // leaving a blank circle with no fallback initial at all
+          // (the `child` branch below was gated on the same wrong
+          // check). Every other avatar in the app already guards
+          // against this with an isNotEmpty check -- this screen was
+          // the one place that didn't.
+          backgroundImage:
+              _hasAvatar ? CachedNetworkImageProvider(notification.actorAvatar!) : null,
+          child: _hasAvatar
+              ? null
+              : Text(_initial, style: AppTextStyles.titleSmall),
         ),
         Positioned(
           right: -2,

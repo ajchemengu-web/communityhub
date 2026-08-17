@@ -133,7 +133,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Register a new account with email + password.
-  /// Stores username and email in the public users table.
+  ///
+  /// Profile-row creation in `public.users` is now handled atomically
+  /// by the `on_auth_user_created` DB trigger (see
+  /// 20260816c_auth_atomic_profile_and_email_lockdown.sql), which reads
+  /// the same `username`/`full_name` metadata passed to signUp() below
+  /// and runs in the same transaction as the auth.users insert — so
+  /// there's no window where the account exists without a profile. The
+  /// upsert here is now just a defensive backstop for environments
+  /// where that migration hasn't been applied yet; once it has, this
+  /// is a harmless no-op update against a row the trigger already
+  /// created.
   Future<void> signUpWithEmail({
     required String email,
     required String password,
@@ -149,7 +159,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
       final uid = res.user?.id;
       if (uid != null) {
-        // Persist username + email in public users table
         await SupabaseService.client.from('users').upsert({
           'id': uid,
           'username': username.trim(),
@@ -169,27 +178,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   static bool _looksLikeEmail(String s) => s.contains('@');
 
+  /// Resolves a username or phone number to the email Supabase Auth
+  /// needs for signInWithPassword(). Goes through a SECURITY DEFINER
+  /// RPC rather than a direct `.select('email')` on `public.users` —
+  /// that table's email/phone columns aren't readable by the
+  /// anon/authenticated roles directly (see
+  /// 20260816c_auth_atomic_profile_and_email_lockdown.sql), so a plain
+  /// select here would just fail. The RPC does the same lookup
+  /// server-side and returns only a single matching email, not the
+  /// column in bulk.
   Future<String> _lookupEmail(String identifier) async {
-    // Try username first, then phone
-    final byUsername = await SupabaseService.client
-        .from('users')
-        .select('email')
-        .eq('username', identifier)
-        .maybeSingle();
+    final result = await SupabaseService.client.rpc(
+      'lookup_email_for_identifier',
+      params: {'identifier': identifier},
+    );
 
-    if (byUsername != null && byUsername['email'] != null) {
-      return byUsername['email'] as String;
-    }
-
-    final normalized = identifier.startsWith('+') ? identifier : '+$identifier';
-    final byPhone = await SupabaseService.client
-        .from('users')
-        .select('email')
-        .eq('phone', normalized)
-        .maybeSingle();
-
-    if (byPhone != null && byPhone['email'] != null) {
-      return byPhone['email'] as String;
+    if (result is String && result.isNotEmpty) {
+      return result;
     }
 
     throw Exception(

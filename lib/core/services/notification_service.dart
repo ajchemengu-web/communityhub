@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../firebase_options.dart';
@@ -28,6 +29,11 @@ class NotificationService {
   // ── Initialise ─────────────────────────────────────────────────
 
   Future<void> initialize() async {
+    // firebase_options.dart has no web config (throws UnsupportedError,
+    // caught below either way), and flutter_local_notifications has no
+    // web implementation at all — skip straight past both rather than
+    // relying on the throw/catch round trip on every web page load.
+    if (kIsWeb) return;
     try {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,

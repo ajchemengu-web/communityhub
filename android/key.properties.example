@@ -1,0 +1,22 @@
+# ─────────────────────────────────────────────────────────────
+# CommunityDome — Release signing config
+#
+# Copy this file to android/key.properties (same folder) and fill in
+# your real values. android/key.properties is git-ignored — NEVER
+# commit it or the .jks file it points to.
+#
+# Reuses the same upload keystore generated earlier this session
+# (communityhub-release-key.jks, alias "upload") — delivered to you
+# separately, not in this repo. The real passwords were shown once in
+# chat; if you've lost them, you'll need to generate a new keystore
+# (and if you've already submitted to Play Console with this one,
+# losing it means you can never update that listing again — see
+# PLAY_STORE_DEPLOYMENT.md).
+# ─────────────────────────────────────────────────────────────
+
+storePassword=REPLACE_WITH_YOUR_KEYSTORE_PASSWORD
+keyPassword=REPLACE_WITH_YOUR_KEY_PASSWORD
+keyAlias=upload
+# Path to the .jks file, relative to the android/ directory (this
+# file's location) or absolute.
+storeFile=communityhub-release-key.jks

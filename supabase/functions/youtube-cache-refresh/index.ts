@@ -13,19 +13,35 @@ import { corsHeaders } from "../_shared/cors.ts";
 const YOUTUBE_API_KEY = Deno.env.get("YOUTUBE_API_KEY")!;
 const YT_BASE = "https://www.googleapis.com/youtube/v3";
 
-// Keyword lists mirrored from lib/core/constants/app_constants.dart —
-// keep these two in sync if the app's keyword lists change.
+// Queries mirrored from lib/core/constants/app_constants.dart +
+// YouTubeService._buildHubQuery — keep these two in sync if the app's
+// keyword lists or query-building logic change.
+//
+// Each entry is: the hub's first 3 keywords (only the first 3 ever drive
+// the real query — see techKeywords'/languagesKeywords' comments in
+// app_constants.dart) joined with YouTube's actual OR operator '|' (NOT
+// the literal word 'OR', which YouTube treats as a plain search term, not
+// a boolean operator — that was a real bug here), followed by
+// AppConstants.generalContentExclusions (applied to every hub), followed
+// by AppConstants.academicDepthQuery for hubs in AppConstants.stemHubTypes
+// only.
+const GENERAL_EXCLUSIONS = "-baby -toddler -nursery";
+const ACADEMIC_DEPTH = "university lecture advanced research -kids -cartoon";
 const HUB_QUERIES: Record<string, string> = {
-  faith: "gospel OR worship OR sermon",
-  technology: "programming OR flutter OR cybersecurity",
-  science: "science OR physics OR chemistry",
-  languages: "language learning OR vocabulary OR grammar",
-  career: "career advice OR job interview OR resume",
-  biology: "biology OR cell biology OR genetics",
-  computer_science: "computer science OR algorithms OR data structures",
-  history: "history documentary OR ancient history",
-  psychology: "psychology OR cognitive science OR mental health",
-  english: "english grammar OR english vocabulary",
+  faith: `gospel|worship|sermon ${GENERAL_EXCLUSIONS}`,
+  technology: `programming|software engineering|cybersecurity ${GENERAL_EXCLUSIONS}`,
+  // Engineering used to just ride along inside the generic `technology`
+  // query above (whose keywords never mention engineering at all) — now
+  // gets its own dedicated, academically-biased query, matching the app.
+  engineering: `engineering|mechanical engineering|civil engineering ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  science: `biology|chemistry|physics ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  languages: `foreign language course|language learning for adults|polyglot ${GENERAL_EXCLUSIONS}`,
+  career: `programming|software engineering|cybersecurity ${GENERAL_EXCLUSIONS}`,
+  biology: `biology|cell biology|genetics ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  computer_science: `computer science|algorithms|data structures ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  history: `history|ancient history|world war ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  psychology: `psychology|cognitive psychology|behavioral psychology ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  english: `learn english|english lesson|english grammar ${GENERAL_EXCLUSIONS}`,
 };
 
 async function searchHub(hubType: string, query: string) {

@@ -1,9 +1,12 @@
-import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/models/order_model.dart';
 import '../domain/models/product_model.dart';
+import '../domain/models/shop_model.dart';
 
 class MarketplaceRepository {
   MarketplaceRepository._();
@@ -11,11 +14,30 @@ class MarketplaceRepository {
 
   final _client = SupabaseService.client;
 
+  /// Sentinel so [updateProduct]'s `stock` param can tell "not passed,
+  /// leave it alone" apart from "passed as null, meaning unlimited" --
+  /// a plain nullable param can't distinguish those two cases.
+  static const Object _unset = Object();
+
+  // NOTE: the seller embed below targets `users!seller_id`, not
+  // `profiles!seller_id` — products.seller_id's actual FK is to
+  // public.users (see 20260704d_marketplace_schema.sql), and there is no
+  // public.profiles table/view in this schema, so `profiles!seller_id`
+  // would fail to resolve as a PostgREST relationship. Fixed here because
+  // the new shop/marketplace trust-signal UI depends on this actually
+  // returning seller name/avatar; _orderSelect below has the same
+  // `profiles!` pattern but is pre-existing and out of scope for this
+  // change, so it's left as-is.
   static const _productSelect = '''
     id, seller_id, community_id, type, title, description, price, currency,
     images, stock, is_active, created_at,
-    seller:profiles!seller_id(full_name, avatar_url),
+    seller:users!seller_id(full_name, avatar_url),
     communities(name)
+  ''';
+
+  static const _shopSelect = '''
+    id, name, bio, banner_url, logo_url, category, is_published, created_at,
+    owner:users!id(full_name, avatar_url)
   ''';
 
   static const _orderSelect = '''
@@ -27,12 +49,39 @@ class MarketplaceRepository {
 
   // ── Products ──────────────────────────────────────────────────
 
-  Future<List<ProductModel>> fetchProducts({String? communityId}) async {
+  /// [type] filters to one category tab (Merch/Books/Courses/Tickets) in
+  /// the redesigned marketplace; [search] does a title match backed by
+  /// the pg_trgm index added in 20260714_shops_schema.sql.
+  Future<List<ProductModel>> fetchProducts({
+    String? communityId,
+    ProductType? type,
+    String? search,
+  }) async {
     var query = _client.from('products').select(_productSelect).eq('is_active', true);
     if (communityId != null) {
       query = query.eq('community_id', communityId) as dynamic;
     }
+    if (type != null) {
+      query = query.eq('type', ProductModel.typeString(type)) as dynamic;
+    }
+    if (search != null && search.trim().isNotEmpty) {
+      query = query.ilike('title', '%${search.trim()}%') as dynamic;
+    }
     final rows = await (query as dynamic).order('created_at', ascending: false) as List;
+    return rows
+        .map((r) => ProductModel.fromMap(Map<String, dynamic>.from(r as Map)))
+        .toList();
+  }
+
+  /// A shop's public inventory grid — every active listing from one
+  /// seller, newest first.
+  Future<List<ProductModel>> fetchProductsBySeller(String sellerId) async {
+    final rows = await _client
+        .from('products')
+        .select(_productSelect)
+        .eq('seller_id', sellerId)
+        .eq('is_active', true)
+        .order('created_at', ascending: false) as List;
     return rows
         .map((r) => ProductModel.fromMap(Map<String, dynamic>.from(r as Map)))
         .toList();
@@ -47,6 +96,11 @@ class MarketplaceRepository {
     return ProductModel.fromMap(row);
   }
 
+  /// Every listing the caller owns, active or not -- unlike
+  /// [fetchProducts]/[fetchProductsBySeller], which only ever return
+  /// `is_active = true` rows (what a buyer should see). Backs the shop
+  /// admin dashboard's "Listings" tab, where a seller needs to see their
+  /// off-shelf items too in order to put them back on shelf.
   Future<List<ProductModel>> fetchMyListings() async {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return [];
@@ -89,11 +143,54 @@ class MarketplaceRepository {
     return ProductModel.fromMap(row);
   }
 
-  Future<String> uploadProductImage(File file, String sellerId) async {
-    final ext = file.path.split('.').last;
-    final path = '$sellerId/${DateTime.now().millisecondsSinceEpoch}.$ext';
-    await _client.storage.from(AppConstants.bucketProductImages).upload(path, file);
+  Future<String> uploadProductImage(
+    Uint8List bytes,
+    String extension,
+    String sellerId,
+  ) async {
+    final path = '$sellerId/${DateTime.now().millisecondsSinceEpoch}.$extension';
+    await _client.storage.from(AppConstants.bucketProductImages).uploadBinary(path, bytes);
     return _client.storage.from(AppConstants.bucketProductImages).getPublicUrl(path);
+  }
+
+  /// Partial update of one of the caller's own listings -- every param
+  /// is optional and only the ones passed get sent, so a quick "toggle
+  /// on/off shelf" or "adjust stock" action doesn't have to resend the
+  /// whole product. RLS's `seller_id = auth.uid()` check on UPDATE (see
+  /// 20260704d_marketplace_schema.sql) means this can never target
+  /// another seller's product even if called with the wrong id.
+  ///
+  /// There is deliberately no `deleteProduct` -- Kilimall's own seller
+  /// guide draws the same distinction CommunityHub does here between
+  /// "Products on Shelf" and an offline/unlisted state rather than
+  /// letting sellers actually delete a listing, almost certainly because
+  /// orders reference product_id and a hard delete would either cascade
+  /// (destroying a buyer's purchase history) or be blocked by the FK.
+  /// Toggling `isActive` off is the real "remove from marketplace" action.
+  Future<ProductModel> updateProduct(
+    String productId, {
+    String? title,
+    String? description,
+    double? price,
+    List<String>? images,
+    Object? stock = _unset, // tri-state: unset / null (unlimited) / a value
+    bool? isActive,
+  }) async {
+    final patch = <String, dynamic>{
+      if (title != null) 'title': title,
+      if (description != null) 'description': description,
+      if (price != null) 'price': price,
+      if (images != null) 'images': images,
+      if (!identical(stock, _unset)) 'stock': stock,
+      if (isActive != null) 'is_active': isActive,
+    };
+    final row = await _client
+        .from('products')
+        .update(patch)
+        .eq('id', productId)
+        .select(_productSelect)
+        .single();
+    return ProductModel.fromMap(row);
   }
 
   // ── Orders ────────────────────────────────────────────────────
@@ -158,5 +255,78 @@ class MarketplaceRepository {
         .from('orders')
         .update({'fulfillment_status': OrderModel.statusString(status)})
         .eq('id', orderId);
+  }
+
+  // ── Shops ─────────────────────────────────────────────────────
+  // shops.id = the owning user's id (see 20260714_shops_schema.sql), so
+  // "does this user have a shop" and "load their shop" are both a plain
+  // primary-key lookup — no separate shop-id indirection anywhere below.
+
+  /// Null if [ownerId] has no shop yet, or has one but hasn't published
+  /// it and isn't the caller themself (RLS enforces that half — a draft
+  /// shop simply won't come back as a row for anyone else).
+  Future<ShopModel?> fetchShop(String ownerId) async {
+    final row = await _client
+        .from('shops')
+        .select(_shopSelect)
+        .eq('id', ownerId)
+        .maybeSingle();
+    if (row == null) return null;
+    return ShopModel.fromMap(row);
+  }
+
+  /// Convenience wrapper for "does *I* have a shop" checks (e.g. the
+  /// marketplace FAB deciding whether to send the current user to shop
+  /// setup or straight to the add-listing form).
+  Future<ShopModel?> fetchMyShop() async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return null;
+    return fetchShop(uid);
+  }
+
+  /// Creates the caller's shop on first save, updates it on every save
+  /// after — same single call either way since every column here is
+  /// owner-writable and RLS's `id = auth.uid()` check on both INSERT and
+  /// UPDATE means this can never target anyone else's row.
+  Future<ShopModel> upsertShop({
+    required String name,
+    String? bio,
+    String? bannerUrl,
+    String? logoUrl,
+    String? category,
+    required bool isPublished,
+  }) async {
+    final uid = SupabaseService.currentUserId!;
+    final row = await _client
+        .from('shops')
+        .upsert({
+          'id': uid,
+          'name': name,
+          'bio': bio,
+          'banner_url': bannerUrl,
+          'logo_url': logoUrl,
+          'category': category,
+          'is_published': isPublished,
+        })
+        .select(_shopSelect)
+        .single();
+    return ShopModel.fromMap(row);
+  }
+
+  Future<String> uploadShopImage(
+    Uint8List bytes,
+    String extension, {
+    required String suffix,
+  }) async {
+    final uid = SupabaseService.currentUserId!;
+    // Deterministic path (banner/logo overwrite in place, mirroring
+    // Profolio's own storage convention) instead of a timestamped name,
+    // so re-uploading a banner doesn't leave the old one orphaned in the
+    // bucket.
+    final path = '$uid/$suffix.$extension';
+    await _client.storage
+        .from(AppConstants.bucketShopImages)
+        .uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
+    return _client.storage.from(AppConstants.bucketShopImages).getPublicUrl(path);
   }
 }

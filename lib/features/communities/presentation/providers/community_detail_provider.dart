@@ -93,12 +93,13 @@ class CommunityDetailNotifier
       if (currentUid != null && postSlice.isNotEmpty) {
         final ids = postSlice.map((r) => r['id'] as String).toList();
         final liked = await SupabaseService.client
-            .from('post_likes')
-            .select('post_id')
+            .from('likes')
+            .select('target_id')
             .eq('user_id', currentUid)
-            .inFilter('post_id', ids) as List<dynamic>;
+            .eq('target_type', 'post')
+            .inFilter('target_id', ids) as List<dynamic>;
         likedIds =
-            liked.map((r) => r['post_id'] as String).toSet();
+            liked.map((r) => r['target_id'] as String).toSet();
       }
 
       final posts = postSlice.map((r) {
@@ -202,6 +203,29 @@ class CommunityDetailNotifier
       }
     }
     state = state.copyWith(announcements: updated);
+  }
+
+  // ── Member management (admin/moderator only — RLS-enforced) ──────
+
+  Future<void> updateMemberRole(String userId, String newRole) async {
+    await _repo.updateMemberRole(communityId, userId, newRole);
+    final updated = state.members.map((m) {
+      final u = m['users'] as Map<String, dynamic>?;
+      if (u != null && u['id'] == userId) {
+        return {...m, 'role': newRole};
+      }
+      return m;
+    }).toList();
+    state = state.copyWith(members: updated);
+  }
+
+  Future<void> removeMember(String userId) async {
+    await _repo.removeMember(communityId, userId);
+    final updated = state.members.where((m) {
+      final u = m['users'] as Map<String, dynamic>?;
+      return u == null || u['id'] != userId;
+    }).toList();
+    state = state.copyWith(members: updated);
   }
 }
 

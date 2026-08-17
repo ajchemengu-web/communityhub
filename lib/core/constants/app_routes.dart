@@ -70,6 +70,18 @@ abstract class AppRoutes {
   static const String productDetail = '/marketplace/:productId';
   static const String sellerOrders = '/marketplace/orders';
 
+  // ── Shops ─────────────────────────────────────────────────
+  static const String manageShop = '/shop/manage';
+  /// The seller dashboard (Overview/Listings/Orders/Settings). Optionally
+  /// takes a `?tab=` query param -- see ShopAdminScreen.initialTab and
+  /// app_router.dart's builder for the accepted values.
+  static const String shopAdmin = '/shop/admin';
+  static const String shop = '/shop/:ownerId';
+
+  // ── Portfolio (Profolio integration) ───────────────────────
+  static const String myPortfolio = '/portfolio';
+  static const String viewPortfolio = '/portfolio/:userId';
+
   // ── Memberships ───────────────────────────────────────────
   static const String tierPicker = '/community/:communityId/memberships';
   static const String mySubscriptions = '/memberships';

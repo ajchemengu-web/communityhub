@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/services/block_service.dart';
@@ -224,7 +224,8 @@ class CommunitiesRepository {
     required String description,
     required String hubType,
     required bool isPrivate,
-    File? coverFile,
+    Uint8List? coverBytes,
+    String coverExtension = 'jpg',
     String? denomination,
     String? location,
     String? website,
@@ -235,16 +236,15 @@ class CommunitiesRepository {
     String? coverUrl;
 
     // Upload cover image
-    if (coverFile != null) {
+    if (coverBytes != null) {
       try {
         await _db.storage.createBucket(
           'community_covers',
           const BucketOptions(public: true),
         );
       } catch (_) {}
-      final ext = coverFile.path.split('.').last;
-      final fileName = '${uid}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-      final bytes = await coverFile.readAsBytes();
+      final fileName = '${uid}_${DateTime.now().millisecondsSinceEpoch}.$coverExtension';
+      final bytes = coverBytes;
       await _db.storage.from('community_covers').uploadBinary(
             'covers/$fileName',
             bytes,
@@ -481,6 +481,35 @@ class CommunitiesRepository {
   }
 
   Future<void> rejectRequest(String communityId, String userId) async {
+    await _db
+        .from('community_members')
+        .delete()
+        .eq('community_id', communityId)
+        .eq('user_id', userId);
+  }
+
+  // ── Member role management ────────────────────────────────
+  // These are thin wrappers -- the real security boundary is the
+  // "Admins/moderators can update other members" / "...can remove
+  // other members" RLS policies on community_members, which only let
+  // an approved admin or moderator act on another member's row.
+
+  /// Changes [userId]'s role within [communityId] (e.g. promote a
+  /// member to moderator, or demote a moderator back to member).
+  Future<void> updateMemberRole(
+    String communityId,
+    String userId,
+    String newRole,
+  ) async {
+    await _db
+        .from('community_members')
+        .update({'role': newRole})
+        .eq('community_id', communityId)
+        .eq('user_id', userId);
+  }
+
+  /// Removes [userId] from [communityId] entirely.
+  Future<void> removeMember(String communityId, String userId) async {
     await _db
         .from('community_members')
         .delete()

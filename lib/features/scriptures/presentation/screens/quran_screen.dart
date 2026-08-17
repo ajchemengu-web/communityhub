@@ -1,7 +1,9 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/data/quran_surahs.dart';
+import '../../data/quran_audio_repository.dart';
 
 class QuranScreen extends StatefulWidget {
   const QuranScreen({super.key});
@@ -183,6 +185,18 @@ class _SurahList extends StatelessWidget {
   }
 }
 
+/// Which part of the current playback is active.
+/// - arabic: verse-by-verse recitation, chaining straight through every
+///   verse in the surah.
+/// - fullNarration: the human-recorded whole-surah Kiswahili track,
+///   played once after ALL the Arabic verses finish — there's no
+///   per-verse timestamp data in that recording, so it can't be
+///   interleaved per verse (see quran_audio_repository.dart's class
+///   doc — this used to be one of two Kiswahili modes, the other being
+///   on-device text-to-speech interleaved per verse, removed because a
+///   synthesized voice reading scripture doesn't sound right).
+enum _AyahAudioPhase { arabic, fullNarration }
+
 class _SurahDetailScreen extends StatefulWidget {
   const _SurahDetailScreen({required this.surah});
   final QuranSurah surah;
@@ -192,15 +206,106 @@ class _SurahDetailScreen extends StatefulWidget {
 }
 
 class _SurahDetailScreenState extends State<_SurahDetailScreen> {
-  // Each entry: { arabic: String, translation: String, number: int }
+  // Each entry: { number, globalNumber, arabic, translation, swahili }
+  // — number is the in-surah verse number, globalNumber is the
+  // Quran-wide 1..6236 number the per-ayah audio CDN indexes by.
   List<Map<String, String>> _ayahs = [];
   bool _loading = true;
   String? _error;
+
+  // --- Audio: verse-by-verse Arabic recitation, then (once every verse
+  // has played) the human-recorded whole-surah Kiswahili narration. See
+  // quran_audio_repository.dart for why there's no human-recorded
+  // per-verse Kiswahili audio to interleave instead. ---
+  final _player = AudioPlayer();
+  List<ReciterModel> _reciters = QuranAudioRepository.fallbackReciters;
+  ReciterModel _reciter = QuranAudioRepository.fallbackReciters.first;
+  int? _ayahIndex; // index into _ayahs of the verse currently loaded
+  _AyahAudioPhase? _phase;
+  bool _sequential = true; // auto-advance verse -> verse, then narration
+  PlayerState _playerState = PlayerState.stopped;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  bool _audioBusy = false;
+  String? _audioError;
+
+  // True whenever the bottom player bar should be shown — per-verse
+  // playback (tracked via _ayahIndex) or the whole-surah full narration
+  // (which has no per-verse index of its own).
+  bool get _isPlayerActive =>
+      _ayahIndex != null || _phase == _AyahAudioPhase.fullNarration;
+
+  // Bumped on every stop/new-play/reciter-change; callbacks (TTS
+  // completion, the timeout safety net) compare against this to ignore
+  // stale events from a sequence step the user has since moved past.
+  int _playToken = 0;
 
   @override
   void initState() {
     super.initState();
     _fetch();
+    _loadReciters();
+
+    // Keep the native player "warm" between verses instead of fully
+    // tearing it down on completion (the default ReleaseMode.release).
+    // Releasing and immediately re-playing a new source back-to-back —
+    // exactly what auto-advancing verse-to-verse does — races the
+    // platform player's teardown and throws, which otherwise surfaces as
+    // a spurious "check your internet connection" error even though the
+    // network is fine.
+    _player.setReleaseMode(ReleaseMode.stop);
+
+    _player.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
+      setState(() => _playerState = state);
+    });
+    _player.onPositionChanged.listen((pos) {
+      if (!mounted) return;
+      setState(() => _position = pos);
+    });
+    _player.onDurationChanged.listen((dur) {
+      if (!mounted) return;
+      setState(() => _duration = dur);
+    });
+    _player.onPlayerComplete.listen((_) {
+      if (!mounted) return;
+      if (_phase == _AyahAudioPhase.arabic && _ayahIndex != null) {
+        if (!_sequential) {
+          setState(() {
+            _ayahIndex = null;
+            _phase = null;
+            _position = Duration.zero;
+          });
+          return;
+        }
+        // Keep chaining through the Arabic verses; once the LAST verse
+        // finishes, play the whole-surah Kiswahili narration once (see
+        // _AyahAudioPhase's class doc for why it can't be interleaved
+        // per verse).
+        final next = _ayahIndex! + 1;
+        if (next < _ayahs.length) {
+          _playAyah(next);
+        } else {
+          _playFullNarration();
+        }
+      } else if (_phase == _AyahAudioPhase.fullNarration) {
+        setState(() {
+          _ayahIndex = null;
+          _phase = null;
+          _position = Duration.zero;
+        });
+      }
+    });
+  }
+
+  Future<void> _loadReciters() async {
+    final reciters = await QuranAudioRepository.instance.fetchReciters();
+    if (!mounted) return;
+    setState(() {
+      _reciters = reciters;
+      final match = reciters.where((r) => r.id == _reciter.id);
+      _reciter = match.isNotEmpty ? match.first : reciters.first;
+    });
   }
 
   Future<void> _fetch() async {
@@ -208,20 +313,34 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
     try {
       // alquran.cloud — free, no key required
       // editions: quran-uthmani (Arabic) + en.asad (English translation)
-      final url =
-          'https://api.alquran.cloud/v1/surah/${widget.surah.number}/editions/quran-uthmani,en.asad';
+      // + sw.barwani (Kiswahili translation — the only Kiswahili edition
+      // alquran.cloud publishes; shown as on-screen text only now. Audio
+      // for Kiswahili comes from the whole-surah human narration in
+      // _playFullNarration, not from this text — see
+      // quran_audio_repository.dart for why there's no human-recorded
+      // per-verse Kiswahili audio to stream instead).
+      final url = 'https://api.alquran.cloud/v1/surah/${widget.surah.number}'
+          '/editions/quran-uthmani,en.asad,sw.barwani';
       final res = await Dio().get(url);
       final editions = (res.data['data'] as List<dynamic>);
       final arabicAyahs =
           (editions[0]['ayahs'] as List<dynamic>).cast<Map<String, dynamic>>();
       final engAyahs =
           (editions[1]['ayahs'] as List<dynamic>).cast<Map<String, dynamic>>();
+      final swAyahs =
+          (editions[2]['ayahs'] as List<dynamic>).cast<Map<String, dynamic>>();
 
       final ayahs = List.generate(arabicAyahs.length, (i) {
         return {
           'number': '${arabicAyahs[i]['numberInSurah']}',
+          // Quran-wide ayah number (1..6236, as opposed to the in-surah
+          // 'numberInSurah' above) — the per-ayah audio CDN indexes by
+          // this. See QuranAudioRepository.arabicAyahAudioUrl.
+          'globalNumber': '${arabicAyahs[i]['number']}',
           'arabic': arabicAyahs[i]['text'] as String? ?? '',
           'translation': engAyahs[i]['text'] as String? ?? '',
+          'swahili':
+              i < swAyahs.length ? (swAyahs[i]['text'] as String? ?? '') : '',
         };
       });
       setState(() { _ayahs = ayahs; _loading = false; });
@@ -231,6 +350,358 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
         _loading = false;
       });
     }
+  }
+
+  /// Plays the Arabic recitation for verse [index]. On completion (see
+  /// the onPlayerComplete listener in initState), if [_sequential] is
+  /// on, this automatically chains into verse [index] + 1's Arabic —
+  /// and once the surah's last verse finishes, into the whole-surah
+  /// Kiswahili narration via [_playFullNarration].
+  Future<void> _playAyah(int index) async {
+    final token = ++_playToken;
+    final ayah = _ayahs[index];
+    final globalNumber = int.tryParse(ayah['globalNumber'] ?? '') ?? 0;
+    setState(() {
+      _ayahIndex = index;
+      _phase = _AyahAudioPhase.arabic;
+      _audioBusy = true;
+      _audioError = null;
+      _position = Duration.zero;
+      _duration = Duration.zero;
+    });
+    try {
+      // Defensively stop anything in-flight before starting the next
+      // clip — switching sources on a still-settling player is what
+      // triggers the auto-chain failure described below.
+      try {
+        await _player.stop();
+      } catch (_) {
+        // Nothing was playing — fine to ignore.
+      }
+      if (token != _playToken) return; // superseded while stopping
+      try {
+        final source = await QuranAudioRepository.instance
+            .arabicAyahAudioSource(_reciter, globalNumber);
+        if (token != _playToken) return;
+        await _player.play(source);
+      } catch (e) {
+        // The audio CDN is a third-party host with no uptime guarantee.
+        // One quiet retry after a short pause turns a real fraction of
+        // transient hiccups into successful playback instead of an
+        // error the user has to manually retry themselves.
+        debugPrint(
+            'Quran audio playback error, retrying once (verse $index, surah ${widget.surah.number}): $e');
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (token != _playToken) return;
+        final source = await QuranAudioRepository.instance
+            .arabicAyahAudioSource(_reciter, globalNumber);
+        if (token != _playToken) return;
+        await _player.play(source);
+      }
+    } catch (e) {
+      debugPrint(
+          'Quran audio playback error (verse $index, surah ${widget.surah.number}): $e');
+      if (!mounted || token != _playToken) return;
+      setState(() {
+        _audioError = 'Could not play audio. Check your internet connection.';
+      });
+    } finally {
+      if (mounted && token == _playToken) setState(() => _audioBusy = false);
+    }
+  }
+
+  /// Plays the human-recorded, whole-surah Kiswahili narration once —
+  /// used by full-narration mode after all Arabic verses have played.
+  /// [_ayahIndex] is deliberately left as the last verse's index (rather
+  /// than cleared) while this plays, so the bottom player bar stays
+  /// visible via [_isPlayerActive] and prev/next verse controls stay
+  /// meaningful if the user backs out of full narration mid-playback.
+  Future<void> _playFullNarration() async {
+    final token = ++_playToken;
+    setState(() {
+      _phase = _AyahAudioPhase.fullNarration;
+      _audioBusy = true;
+      _audioError = null;
+      _position = Duration.zero;
+      _duration = Duration.zero;
+    });
+    try {
+      try {
+        await _player.stop();
+      } catch (_) {
+        // Nothing was playing — fine to ignore.
+      }
+      if (token != _playToken) return;
+      try {
+        final source = await QuranAudioRepository.instance
+            .swahiliTranslationAudioSource(widget.surah.number);
+        if (token != _playToken) return;
+        await _player.play(source);
+      } catch (e) {
+        debugPrint(
+            'Kiswahili full-narration playback error, retrying once (surah ${widget.surah.number}): $e');
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (token != _playToken) return;
+        final source = await QuranAudioRepository.instance
+            .swahiliTranslationAudioSource(widget.surah.number);
+        if (token != _playToken) return;
+        await _player.play(source);
+      }
+    } catch (e) {
+      debugPrint(
+          'Kiswahili full-narration playback error (surah ${widget.surah.number}): $e');
+      if (!mounted || token != _playToken) return;
+      setState(() {
+        _audioError = 'Could not play audio. Check your internet connection.';
+      });
+    } finally {
+      if (mounted && token == _playToken) setState(() => _audioBusy = false);
+    }
+  }
+
+  Future<void> _togglePlayPause() async {
+    if (!_isPlayerActive) {
+      await _playAyah(0);
+      return;
+    }
+    if (_playerState == PlayerState.playing) {
+      await _player.pause();
+    } else {
+      await _player.resume();
+    }
+  }
+
+  Future<void> _stopAudio() async {
+    _playToken++; // invalidate any in-flight callbacks
+    await _player.stop();
+    if (!mounted) return;
+    setState(() {
+      _ayahIndex = null;
+      _phase = null;
+      _position = Duration.zero;
+    });
+  }
+
+  void _pickReciter() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0F2040),
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('Choose reciter',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+            ),
+            ..._reciters.map((r) {
+              return ListTile(
+                title:
+                    Text(r.name, style: const TextStyle(color: Colors.white)),
+                trailing: r.id == _reciter.id
+                    ? const Icon(Icons.check, color: Color(0xFF4CAF50))
+                    : null,
+                onTap: () {
+                  Navigator.pop(context);
+                  final idx = _ayahIndex;
+                  final wasPlayingArabic =
+                      _phase == _AyahAudioPhase.arabic && idx != null;
+                  setState(() => _reciter = r);
+                  if (wasPlayingArabic) {
+                    _playAyah(idx!);
+                  }
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  /// Single entry point: starts verse 1's Arabic recitation, chains
+  /// straight through every verse in the surah, then plays the
+  /// human-recorded whole-surah Kiswahili narration once at the end.
+  Widget _buildAudioQuickActions() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () => _playAyah(0),
+              icon: const Icon(Icons.play_arrow_rounded, size: 22),
+              label: const Text('Play Recitation + Kiswahili'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: _pickReciter,
+            icon: const Icon(Icons.person_outline, color: Colors.white38),
+            tooltip: 'Choose reciter',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAudioPlayerBar() {
+    final isFullNarration = _phase == _AyahAudioPhase.fullNarration;
+    final verseNo = _ayahIndex != null ? _ayahs[_ayahIndex!]['number'] : null;
+    final label = isFullNarration
+        ? 'Kiswahili full narration'
+        : _ayahIndex == null
+            ? ''
+            : '${_reciter.name} · Verse $verseNo · Recitation';
+    final totalMs = _duration.inMilliseconds > 0 ? _duration.inMilliseconds : 1;
+    final posMs = _position.inMilliseconds.clamp(0, totalMs);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0F2040),
+        border: Border(top: BorderSide(color: Color(0xFF1A6B4A), width: 1)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_audioError != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(_audioError!,
+                    style:
+                        const TextStyle(color: Colors.redAccent, fontSize: 11)),
+              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(label,
+                      style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis),
+                ),
+                Text('${_fmt(_position)} / ${_fmt(_duration)}',
+                    style: const TextStyle(color: Colors.white38, fontSize: 11)),
+              ],
+            ),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 2,
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 6),
+              ),
+              child: Slider(
+                value: posMs.toDouble(),
+                max: totalMs.toDouble(),
+                activeColor: const Color(0xFF4CAF50),
+                inactiveColor: Colors.white12,
+                onChanged: (v) =>
+                    _player.seek(Duration(milliseconds: v.toInt())),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  onPressed: (!isFullNarration &&
+                          _ayahIndex != null &&
+                          _ayahIndex! > 0)
+                      ? () => _playAyah(_ayahIndex! - 1)
+                      : null,
+                  icon: const Icon(Icons.skip_previous_rounded,
+                      color: Colors.white38),
+                  tooltip: 'Previous verse',
+                ),
+                IconButton(
+                  iconSize: 40,
+                  onPressed: _audioBusy ? null : _togglePlayPause,
+                  icon: _audioBusy
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Color(0xFF4CAF50)),
+                        )
+                      : Icon(
+                          _playerState == PlayerState.playing
+                              ? Icons.pause_circle_filled
+                              : Icons.play_circle_filled,
+                          color: const Color(0xFF4CAF50)),
+                ),
+                IconButton(
+                  onPressed: _stopAudio,
+                  icon: const Icon(Icons.stop_circle_outlined,
+                      color: Colors.white38),
+                  tooltip: 'Stop',
+                ),
+                IconButton(
+                  onPressed: (!isFullNarration &&
+                          _ayahIndex != null &&
+                          _ayahIndex! < _ayahs.length - 1)
+                      ? () => _playAyah(_ayahIndex! + 1)
+                      : null,
+                  icon: const Icon(Icons.skip_next_rounded,
+                      color: Colors.white38),
+                  tooltip: 'Next verse',
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text(
+                isFullNarration
+                    ? 'Playing the full Kiswahili narration'
+                    : 'Kiswahili narration plays once all verses finish',
+                style: const TextStyle(
+                    color: Color(0xFF4CAF50),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                isFullNarration
+                    ? QuranAudioRepository.swahiliTranslationLicenseNote
+                    : QuranAudioRepository.arabicRecitationAttribution,
+                style: const TextStyle(color: Colors.white24, fontSize: 9),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -295,6 +766,9 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                   slivers: [
                     SliverToBoxAdapter(
                       child: _SurahHeader(surah: surah),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildAudioQuickActions(),
                     ),
                     SliverPadding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -378,6 +852,7 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                     ),
                   ],
                 ),
+      bottomNavigationBar: _isPlayerActive ? _buildAudioPlayerBar() : null,
     );
   }
 }

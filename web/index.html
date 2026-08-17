@@ -18,19 +18,69 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="CommunityHub — faith, learning and career communities, events, scripture study, and marketplace in one app.">
+  <meta name="theme-color" content="#0D1117">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="communityhub">
+  <meta name="apple-mobile-web-app-title" content="CommunityHub">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>communityhub</title>
+  <title>CommunityHub</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    Google Sign-In (used by the YouTube-connect feature in
+    reels_screen.dart to request an incremental upload scope) needs a
+    *web* OAuth client id on this platform — the Android/iOS client ids
+    in your Firebase/Google Cloud project don't cover web. Create a Web
+    application OAuth client in Google Cloud Console (APIs & Services →
+    Credentials) with this deployed origin as an authorized JavaScript
+    origin, then replace the placeholder content below with the real
+    client id. Google Sign-In through Supabase Auth's OAuth redirect
+    (login screen) is unaffected either way — only the YouTube-scope
+    request in reels_screen.dart uses this.
+
+    IMPORTANT: this tag must always be present with SOME value, even a
+    placeholder. google_sign_in_web reads it during its own plugin
+    registration — which Flutter runs unconditionally on every web
+    build once google_sign_in is a dependency, regardless of whether
+    the app ever calls GoogleSignIn() — and throws an uncaught error
+    that blanks the whole app if the tag is missing entirely. With the
+    placeholder below, registration completes safely; the actual
+    YouTube like/subscribe buttons simply no-op (already wrapped in a
+    try/catch in _getYouTubeToken()) until a real client id is set.
+  -->
+  <meta name="google-signin-client_id" content="000000000000-placeholder00000000000000.apps.googleusercontent.com">
+
+  <!--
+    The `passkeys` package is pulled in transitively (via supabase_flutter
+    → gotrue's optional WebAuthn support) — nothing in this app's own code
+    uses it. Same story as google_sign_in_web above: Flutter registers it
+    on every web build regardless of actual usage, and its web plugin
+    (passkeys_web) requires this JS SDK to be present or it throws
+    "Cannot read properties of undefined (reading 'init')" trying to call
+    PasskeyAuthenticator.init() on an object that was never loaded — which
+    is the exact uncaught error that was blanking the whole app on boot.
+    Required per https://pub.dev/packages/passkeys web setup instructions.
+  -->
+  <script
+    src="https://github.com/corbado/flutter-passkeys/releases/download/2.4.0/bundle.js"
+    type="application/javascript"
+  ></script>
+
+  <!--
+    Google AdSense site verification + ad-serving script. This is a
+    single-page app, so this one index.html is what's actually served
+    for every route (the Flutter router handles navigation client-side
+    after load) -- there's nothing separate to add per-page.
+  -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3541385284109296"
+     crossorigin="anonymous"></script>
 </head>
 <body>
   <!--

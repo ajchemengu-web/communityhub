@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import '../../../core/services/block_service.dart';
 import '../../../core/services/supabase_service.dart';
@@ -141,7 +141,12 @@ class ChatRepository {
         .where((m) => m['user_id'] != uid)
         .map((m) {
           final p = Map<String, dynamic>.from(m as Map);
-          final profile = p['profiles'] as Map<String, dynamic>? ?? {};
+          // The query above joins this as `users!user_id(...)`, not
+          // `profiles` -- this was reading the wrong key and silently
+          // getting an empty map every time, which is why a freshly
+          // created direct conversation's other participant always
+          // showed up with no name/photo.
+          final profile = p['users'] as Map<String, dynamic>? ?? {};
           return ParticipantModel(
             userId: p['user_id'] as String,
             fullName: profile['full_name'] as String?,
@@ -240,14 +245,17 @@ class ChatRepository {
 
   // ── Upload media for chat ──────────────────────────────────
 
-  Future<String> uploadChatMedia(File file, String conversationId) async {
+  Future<String> uploadChatMedia(
+    Uint8List bytes,
+    String extension,
+    String conversationId,
+  ) async {
     final uid = SupabaseService.currentUserId!;
-    final ext = file.path.split('.').last;
-    final path = 'chat/$conversationId/$uid/${DateTime.now().millisecondsSinceEpoch}.$ext';
+    final path = 'chat/$conversationId/$uid/${DateTime.now().millisecondsSinceEpoch}.$extension';
 
     await SupabaseService.client.storage
         .from('chat_media')
-        .upload(path, file);
+        .uploadBinary(path, bytes);
 
     return SupabaseService.client.storage
         .from('chat_media')
@@ -359,6 +367,21 @@ class ChatRepository {
         .single();
 
     return CallModel.fromMap(row);
+  }
+
+  /// Fetches a LiveKit access token scoped to this specific call. Minted
+  /// server-side by the `livekit-call-token` Edge Function, which looks
+  /// up [callId] with a service-role client and rejects the request
+  /// unless the caller is actually the call's caller_id or receiver_id —
+  /// unlike the live-streaming feature's `livekit-generate-token`
+  /// (any authenticated user, any room name — correct for a public
+  /// stream audience, wrong for a private 1:1 call), this can't be used
+  /// to join someone else's call.
+  Future<String> fetchLiveKitCallToken(String callId) async {
+    final res = await SupabaseService.client.functions
+        .invoke('livekit-call-token', body: {'callId': callId});
+    final data = res.data as Map<String, dynamic>;
+    return data['token'] as String;
   }
 
   // ── Helpers ───────────────────────────────────────────────

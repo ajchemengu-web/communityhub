@@ -148,10 +148,11 @@ class FeedRepository {
         final postIds = rows.map((r) => r['id'] as String).toList();
         final results = await Future.wait([
           _db
-              .from('post_likes')
-              .select('post_id')
+              .from('likes')
+              .select('target_id')
               .eq('user_id', uid)
-              .inFilter('post_id', postIds) as Future<dynamic>,
+              .eq('target_type', 'post')
+              .inFilter('target_id', postIds) as Future<dynamic>,
           _db
               .from('bookmarks')
               .select('post_id')
@@ -159,7 +160,7 @@ class FeedRepository {
               .inFilter('post_id', postIds) as Future<dynamic>,
         ]);
         likedIds = (results[0] as List<dynamic>)
-            .map((r) => r['post_id'] as String)
+            .map((r) => r['target_id'] as String)
             .toSet();
         bookmarkedIds = (results[1] as List<dynamic>)
             .map((r) => r['post_id'] as String)
@@ -233,15 +234,23 @@ class FeedRepository {
       if (AppConstants.youtubeApiKey == 'YOUR_YOUTUBE_API_KEY') return [];
 
       if (hubType == AppConstants.hubAll) {
-        // Mix faith + science + technology + languages evenly
-        final quarter = (limit / 4).ceil();
+        // Mix faith + science + engineering + technology + languages —
+        // science/engineering get an extra slice each so STEM content is
+        // proportionally more prominent, and engineering is queried with
+        // its own keyword list instead of only ever riding along inside
+        // the generic "technology" query (which never even mentions the
+        // word "engineering").
+        final slice = (limit / 6).ceil();
         final results = await Future.wait([
-          yt.getFaithFeed(maxResults: quarter),
-          yt.getHubFeed(hubType: AppConstants.hubScience, maxResults: quarter),
-          yt.getHubFeed(hubType: AppConstants.hubTechnology, maxResults: quarter),
-          yt.getHubFeed(hubType: AppConstants.hubLanguages, maxResults: quarter),
+          yt.getFaithFeed(maxResults: slice),
+          yt.getHubFeed(hubType: AppConstants.hubScience, maxResults: slice * 2),
+          yt.getHubFeed(hubType: AppConstants.hubEngineering, maxResults: slice * 2),
+          yt.getHubFeed(hubType: AppConstants.hubTechnology, maxResults: slice),
+          yt.getHubFeed(hubType: AppConstants.hubLanguages, maxResults: slice),
         ]);
-        final merged = [...results[0], ...results[1], ...results[2], ...results[3]];
+        final merged = [
+          ...results[0], ...results[1], ...results[2], ...results[3], ...results[4],
+        ];
         merged.shuffle();
         return merged.take(limit).toList();
       } else if (hubType == AppConstants.hubFaith) {
@@ -435,16 +444,19 @@ class FeedRepository {
       if (isCurrentlyLiked) {
         // Unlike: delete the row
         await _db
-            .from('post_likes')
+            .from('likes')
             .delete()
-            .eq('post_id', postId)
+            .eq('target_id', postId)
+            .eq('target_type', 'post')
             .eq('user_id', uid);
       } else {
-        // Like: insert a row (ON CONFLICT DO NOTHING is handled by DB constraint)
-        await _db.from('post_likes').upsert({
-          'post_id': postId,
+        // Like: insert a row (unique constraint on user_id+target_id+target_type
+        // makes this idempotent under race/double-tap)
+        await _db.from('likes').upsert({
+          'target_id': postId,
+          'target_type': 'post',
           'user_id': uid,
-        });
+        }, onConflict: 'user_id,target_id,target_type');
       }
 
       // Fetch the current like count from the post row

@@ -231,7 +231,18 @@ class _CameraRecorderScreenState extends State<CameraRecorderScreen>
             ),
 
           // ── Top bar ────────────────────────────────────────────
-          SafeArea(
+          // Must be wrapped in Positioned: this Stack uses
+          // fit: StackFit.expand, which forces any *non*-positioned
+          // child to fill the entire Stack. Without Positioned here,
+          // this SafeArea/Row gets stretched to the full screen height
+          // and Row's default crossAxisAlignment.center then renders
+          // the close/sound/profile controls vertically centered in
+          // the middle of the screen instead of pinned to the top.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
@@ -303,6 +314,7 @@ class _CameraRecorderScreenState extends State<CameraRecorderScreen>
                   ),
                 ],
               ),
+            ),
             ),
           ),
 
@@ -490,10 +502,13 @@ class _ModeTabBar extends StatelessWidget {
   final _CameraMode current;
   final ValueChanged<_CameraMode> onChanged;
 
+  // 'Live' tab removed along with the live-streaming feature (see the
+  // matching note in home_screen.dart). _CameraMode.live is left defined
+  // below since nothing else references it, but it's no longer reachable
+  // from this tab bar.
   static const _modes = [
     (_CameraMode.video, 'Video'),
     (_CameraMode.short, 'Short'),
-    (_CameraMode.live, 'Live'),
     (_CameraMode.post, 'Post'),
   ];
 
@@ -607,7 +622,16 @@ class _PreviewScreen extends StatelessWidget {
           else
             const Center(child: CircularProgressIndicator(color: Colors.white)),
 
-          SafeArea(
+          // Wrapped in Positioned for the same reason as the recorder's
+          // top bar: fit: StackFit.expand forces non-positioned children
+          // to fill the whole Stack, which would otherwise vertically
+          // center this row in the middle of the screen instead of
+          // pinning it to the top.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Row(
@@ -622,6 +646,7 @@ class _PreviewScreen extends StatelessWidget {
                   const SizedBox(width: 48),
                 ],
               ),
+            ),
             ),
           ),
 

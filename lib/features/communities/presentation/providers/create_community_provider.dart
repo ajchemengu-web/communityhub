@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,7 +16,8 @@ class CreateCommunityState {
     this.denomination = '',
     this.location = '',
     this.website = '',
-    this.coverFile,
+    this.coverBytes,
+    this.coverExtension = 'jpg',
     this.status = CreateCommunityStatus.idle,
     this.errorMessage,
     this.created,
@@ -29,7 +30,8 @@ class CreateCommunityState {
   final String denomination;
   final String location;
   final String website;
-  final File? coverFile;
+  final Uint8List? coverBytes;
+  final String coverExtension;
   final CreateCommunityStatus status;
   final String? errorMessage;
   final CommunityModel? created;
@@ -46,7 +48,8 @@ class CreateCommunityState {
     String? denomination,
     String? location,
     String? website,
-    File? coverFile,
+    Uint8List? coverBytes,
+    String? coverExtension,
     bool clearCover = false,
     CreateCommunityStatus? status,
     String? errorMessage,
@@ -60,7 +63,8 @@ class CreateCommunityState {
         denomination: denomination ?? this.denomination,
         location: location ?? this.location,
         website: website ?? this.website,
-        coverFile: clearCover ? null : (coverFile ?? this.coverFile),
+        coverBytes: clearCover ? null : (coverBytes ?? this.coverBytes),
+        coverExtension: coverExtension ?? this.coverExtension,
         status: status ?? this.status,
         errorMessage: errorMessage ?? this.errorMessage,
         created: created ?? this.created,
@@ -80,8 +84,10 @@ class CreateCommunityNotifier
   void setDenomination(String v) => state = state.copyWith(denomination: v);
   void setLocation(String v) => state = state.copyWith(location: v);
   void setWebsite(String v) => state = state.copyWith(website: v);
-  void setCoverFile(File? f) =>
-      state = f == null ? state.copyWith(clearCover: true) : state.copyWith(coverFile: f);
+  void setCover(Uint8List? bytes, {String extension = 'jpg'}) =>
+      state = bytes == null
+          ? state.copyWith(clearCover: true)
+          : state.copyWith(coverBytes: bytes, coverExtension: extension);
 
   Future<void> submit() async {
     if (!state.canSubmit) return;
@@ -93,7 +99,8 @@ class CreateCommunityNotifier
         description: state.description,
         hubType: state.hubType,
         isPrivate: state.isPrivate,
-        coverFile: state.coverFile,
+        coverBytes: state.coverBytes,
+        coverExtension: state.coverExtension,
         denomination: state.denomination.isEmpty ? null : state.denomination,
         location: state.location.isEmpty ? null : state.location,
         website: state.website.isEmpty ? null : state.website,

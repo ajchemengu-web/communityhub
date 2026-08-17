@@ -108,26 +108,44 @@ class ChatsNotifier extends StateNotifier<ChatsState> {
     final uid = SupabaseService.currentUserId;
     if (uid == null) return;
 
-    _channel = SupabaseService.client
-        .channel('chats_messages_$uid')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'messages',
-          callback: (payload) {
-            final row = payload.newRecord;
-            final convoId = row['conversation_id'] as String?;
-            if (convoId == null) return;
+    // This runs synchronously from the constructor, right after _load()
+    // -- which is itself try/caught and always resolves isLoading to
+    // false. Realtime channel setup wasn't guarded the same way: if
+    // .channel(...).subscribe() (or anything in the SDK's realtime
+    // connection setup) throws here, it throws out of the
+    // ChatsNotifier() constructor itself, which fails the whole
+    // provider rather than just leaving live updates disconnected --
+    // the conversations list this notifier already successfully loaded
+    // would never make it to the screen at all. Live updates are a
+    // nice-to-have on top of the initial REST fetch, not a
+    // precondition for it, so a failure here must never be able to
+    // take down the rest of the screen with it.
+    try {
+      _channel = SupabaseService.client
+          .channel('chats_messages_$uid')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'messages',
+            callback: (payload) {
+              final row = payload.newRecord;
+              final convoId = row['conversation_id'] as String?;
+              if (convoId == null) return;
 
-            _updateConversationPreview(
-              convoId: convoId,
-              lastMessage: row['content'] as String? ?? '',
-              lastMessageAt: row['created_at'] as String?,
-              senderId: row['sender_id'] as String?,
-            );
-          },
-        )
-        .subscribe();
+              _updateConversationPreview(
+                convoId: convoId,
+                lastMessage: row['content'] as String? ?? '',
+                lastMessageAt: row['created_at'] as String?,
+                senderId: row['sender_id'] as String?,
+              );
+            },
+          )
+          .subscribe();
+    } catch (_) {
+      // Live conversation-preview updates won't arrive, but the list
+      // this notifier already loaded still renders and pull-to-refresh
+      // still works.
+    }
   }
 
   void _updateConversationPreview({

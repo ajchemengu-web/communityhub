@@ -606,7 +606,18 @@ class _StoryCameraViewState extends State<_StoryCameraView>
               child: CircularProgressIndicator(color: AppColors.primary)),
 
         // Top bar
-        SafeArea(
+        // Wrapped in Positioned: this Stack uses fit: StackFit.expand,
+        // which forces non-positioned children to fill the whole Stack.
+        // Without Positioned here, this SafeArea/Row gets stretched to
+        // the full screen height and Row's default
+        // crossAxisAlignment.center renders the close/flash/settings
+        // icons vertically centered in the middle of the screen instead
+        // of pinned to the top.
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
@@ -627,6 +638,7 @@ class _StoryCameraViewState extends State<_StoryCameraView>
                     color: Colors.white, size: 22),
               ],
             ),
+          ),
           ),
         ),
 
@@ -945,7 +957,17 @@ class _BoomerangCaptureScreenState extends State<_BoomerangCaptureScreen> {
         fit: StackFit.expand,
         children: [
           CameraPreview(widget.controller),
-          SafeArea(
+          // Wrapped in Positioned: this Stack uses fit: StackFit.expand,
+          // which forces non-positioned children to fill the whole
+          // Stack — without it, this SafeArea/Row gets stretched to the
+          // full screen height and Row's default
+          // crossAxisAlignment.center renders "Boomerang" and the close
+          // button vertically centered on screen instead of at the top.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Row(
@@ -962,6 +984,7 @@ class _BoomerangCaptureScreenState extends State<_BoomerangCaptureScreen> {
                   const SizedBox(width: 40),
                 ],
               ),
+            ),
             ),
           ),
           Positioned(
@@ -1285,7 +1308,18 @@ class _PreviewViewState extends State<_PreviewView> {
         ),
 
         // Top bar
-        SafeArea(
+        // Wrapped in Positioned: this Stack uses fit: StackFit.expand,
+        // which forces non-positioned children to fill the whole
+        // Stack — without it, this SafeArea/Row gets stretched to the
+        // full screen height and Row's default
+        // crossAxisAlignment.center renders the back button and
+        // "Video" badge vertically centered on screen instead of at
+        // the top.
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
             child: Row(
@@ -1316,6 +1350,7 @@ class _PreviewViewState extends State<_PreviewView> {
                   ),
               ],
             ),
+          ),
           ),
         ),
 

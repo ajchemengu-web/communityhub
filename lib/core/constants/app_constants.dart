@@ -6,6 +6,9 @@ abstract class AppConstants {
   static const String appName = 'CommunityHub';
   static const String appTagline = 'Faith, Knowledge & Community';
   static const String appVersion = '1.0.0';
+  // Deployed web app — used as the link shared by the Invite Friends
+  // sheet (profile screen). Update if the production domain changes.
+  static const String appWebsiteUrl = 'https://communityhub-kappa.vercel.app';
 
   // ── Supabase ──────────────────────────────────────────────
   static const String supabaseUrl = 'https://uxfxrvyamfgnjggjbrkh.supabase.co';
@@ -86,9 +89,17 @@ abstract class AppConstants {
   ];
 
   // Technology / Career
+  //
+  // 'flutter' deliberately isn't in the first 3 entries: only the first 3
+  // keywords are ever used to build a hub's YouTube search query (see
+  // YouTubeService._buildHubQuery), and 'flutter' alone is ambiguous
+  // enough (heart flutter, eyelash flutter, swimming flutter kick...) to
+  // pull in unrelated results. It's still in the list further down for
+  // AppConstants.keywordsFor()'s content-filter use, where being one of
+  // many OR'd terms checked against a whole title/description is safe.
   static const List<String> techKeywords = [
-    'programming', 'flutter', 'cybersecurity', 'data science',
-    'machine learning', 'coding', 'software engineering',
+    'programming', 'software engineering', 'cybersecurity',
+    'flutter', 'data science', 'machine learning', 'coding',
     'web development', 'python', 'javascript', 'networking',
     'cloud computing', 'artificial intelligence', 'devops',
   ];
@@ -98,34 +109,52 @@ abstract class AppConstants {
     'biology', 'chemistry', 'physics', 'mathematics', 'science',
     'psychology', 'geography', 'history', 'anatomy', 'ecology',
     'geology', 'astronomy', 'neuroscience', 'genetics',
+    // Graduate/research-depth terms — without these, a bare subject word
+    // ("biology", "physics"...) tends to surface popular/intro explainer
+    // content on YouTube rather than university-level material.
+    'scientific research', 'graduate research', 'PhD research',
+    'systems biology', 'computational science', 'peer-reviewed study',
+    'university lecture', 'research seminar',
   ];
   static const List<String> biologyKeywords = [
     'biology', 'cell biology', 'genetics', 'ecology', 'anatomy',
     'microbiology', 'botany', 'zoology', 'evolution', 'biochemistry',
+    'molecular biology', 'systems biology', 'computational biology',
+    'immunology', 'developmental biology', 'structural biology',
   ];
   static const List<String> chemistryKeywords = [
     'chemistry', 'organic chemistry', 'periodic table', 'chemical reaction',
     'molecular', 'atom', 'electron', 'titration', 'thermodynamics',
+    'physical chemistry', 'quantum chemistry', 'analytical chemistry',
+    'polymer chemistry', 'spectroscopy', 'inorganic chemistry',
   ];
   static const List<String> physicsKeywords = [
     'physics', 'quantum mechanics', 'relativity', 'thermodynamics',
     'electromagnetism', 'optics', 'mechanics', 'nuclear physics', 'astrophysics',
+    'quantum field theory', 'condensed matter physics', 'particle physics',
+    'general relativity', 'statistical mechanics', 'graduate physics',
   ];
   static const List<String> mathematicsKeywords = [
     'mathematics', 'algebra', 'calculus', 'geometry', 'statistics',
     'trigonometry', 'linear algebra', 'differential equations', 'number theory',
+    'abstract algebra', 'topology', 'real analysis', 'functional analysis',
+    'graduate mathematics', 'mathematical proof',
   ];
   static const List<String> psychologyKeywords = [
     'psychology', 'cognitive psychology', 'behavioral psychology',
     'neuroscience', 'mental health', 'psychiatry', 'therapy', 'mindset',
+    'cognitive neuroscience', 'clinical psychology research',
+    'graduate psychology', 'psychology research methods',
   ];
   static const List<String> geographyKeywords = [
     'geography', 'physical geography', 'human geography', 'cartography',
     'climate', 'geopolitics', 'urban planning', 'population', 'continent',
+    'geospatial analysis', 'advanced geopolitics', 'climatology research',
   ];
   static const List<String> historyKeywords = [
     'history', 'ancient history', 'world war', 'civilisation', 'historical',
     'archaeology', 'empire', 'revolution', 'medieval', 'colonial',
+    'historiography', 'graduate history seminar', 'historical research',
   ];
 
   // Technology sub-hubs
@@ -133,22 +162,42 @@ abstract class AppConstants {
     'engineering', 'mechanical engineering', 'civil engineering',
     'electrical engineering', 'chemical engineering', 'structural engineering',
     'thermodynamics', 'materials science',
+    // Graduate/research-depth terms
+    'finite element analysis', 'engineering design', 'structural analysis',
+    'control systems engineering', 'fluid mechanics', 'systems engineering',
+    'engineering mathematics', 'graduate engineering', 'engineering research',
   ];
   static const List<String> roboticsKeywords = [
     'robotics', 'automation', 'robot', 'arduino', 'raspberry pi',
     'mechatronics', 'sensors', 'actuators', 'control systems', 'AI robot',
+    'robotics research', 'motion planning', 'robotic manipulation',
   ];
   static const List<String> aviationKeywords = [
     'aviation', 'aeronautics', 'pilot', 'aircraft', 'aerospace',
     'flight training', 'aerodynamics', 'cockpit', 'navigation', 'drone',
+    'aerospace engineering', 'flight dynamics', 'propulsion systems',
   ];
   static const List<String> computerScienceKeywords = [
     'computer science', 'algorithms', 'data structures', 'operating systems',
     'compiler', 'networking', 'database', 'cybersecurity', 'software engineering',
+    'distributed systems', 'computational complexity', 'formal methods',
+    'machine learning theory', 'graduate computer science',
   ];
 
   // Languages
+  //
+  // The first 3 entries are what actually drive the Languages hub's
+  // YouTube search (see the techKeywords comment above for why only the
+  // first 3 matter) — deliberately compound, adult-learner phrases rather
+  // than bare 'language learning' / 'english' / 'french'. Those bare
+  // words are what pulled baby "first words" / toddler-speech-development
+  // channels (astronomically popular, and genuinely about "English" and
+  // "language learning" in a literal sense) into this hub. The plain
+  // language names stay in the list below for keywordsFor()'s content
+  // filter, where matching loosely against a whole title/description is
+  // fine and actually desirable.
   static const List<String> languagesKeywords = [
+    'foreign language course', 'language learning for adults', 'polyglot',
     'language learning', 'french', 'english', 'spanish', 'german',
     'swahili', 'chinese', 'japanese', 'arabic', 'linguistics', 'grammar',
   ];
@@ -292,6 +341,44 @@ abstract class AppConstants {
     hubSwahili, hubChinese, hubJapanese, hubArabic,
   ];
 
+  /// Hubs whose content should be biased toward university/graduate/
+  /// research depth rather than generic, high-school-level explainers —
+  /// covers the Science hub and all of its sub-hubs, plus Engineering and
+  /// its sibling Technology sub-hubs. Used to add an academic-depth bias
+  /// to YouTube search queries (see [academicDepthQuery]) and to weight
+  /// these hubs more heavily when the home feed mixes hubs together.
+  static const Set<String> stemHubTypes = {
+    hubScience, hubBiology, hubChemistry, hubPhysics, hubMathematics,
+    hubPsychology, hubGeography, hubHistory,
+    hubEngineering, hubRobotics, hubAviation, hubComputerScience,
+  };
+
+  static bool isStemHub(String hubType) => stemHubTypes.contains(hubType);
+
+  /// Appended to STEM-hub YouTube search queries. A bare subject keyword
+  /// ("physics", "biology"...) searched alone tends to surface popular,
+  /// introductory/high-school-level explainer videos because that's what
+  /// YouTube's general-audience relevance ranking favors. Adding explicit
+  /// depth signals — and excluding a couple of unambiguously shallow
+  /// terms — biases results toward university lectures, research talks,
+  /// and other postgraduate-level material instead.
+  static const String academicDepthQuery =
+      'university lecture advanced research -kids -cartoon';
+
+  /// Appended to EVERY hub's YouTube search query, STEM or not. Some of
+  /// the most-watched content on all of YouTube is toddler/baby
+  /// education (the "first words" / nursery-rhyme genre routinely runs
+  /// into billions of views), and it happens to be genuinely relevant by
+  /// keyword to things like the Languages hub's "language learning" /
+  /// "English" search terms — so without excluding it explicitly, it can
+  /// crowd out actually-relevant results purely on view-count-driven
+  /// relevance ranking. This is deliberately separate from
+  /// [academicDepthQuery] (which is STEM-only) since every hub, not just
+  /// STEM ones, can hit this kind of unrelated-but-keyword-matching
+  /// pollution.
+  static const String generalContentExclusions =
+      '-baby -toddler -nursery';
+
   /// Returns the keyword list for a given hub type
   static List<String> keywordsFor(String hubType) {
     switch (hubType) {
@@ -362,4 +449,5 @@ abstract class AppConstants {
   static const String bucketChatMedia = 'chat_media';
   static const String bucketCommunityCovers = 'community_covers';
   static const String bucketProductImages = 'product_images';
+  static const String bucketShopImages = 'shop_images';
 }

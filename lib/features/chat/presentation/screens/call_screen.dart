@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 
+import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../providers/call_provider.dart';
@@ -63,8 +65,13 @@ class _CallScreenState extends ConsumerState<CallScreen>
 
     final isVideo = call.isVideo;
     final isRinging = call.isRinging;
-    final displayName = call.receiverName ?? 'Unknown';
-    final avatarUrl = call.receiverAvatar;
+    // Always show the OTHER participant — call.receiverName/receiverAvatar
+    // is who the caller dialed, which is wrong for the callee's own screen
+    // (it would show their own name back at them).
+    final iAmCaller = SupabaseService.currentUserId == call.callerId;
+    final displayName =
+        (iAmCaller ? call.receiverName : call.callerName) ?? 'Unknown';
+    final avatarUrl = iAmCaller ? call.receiverAvatar : call.callerAvatar;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -73,7 +80,8 @@ class _CallScreenState extends ConsumerState<CallScreen>
         children: [
           // ── Background: video feed or avatar ────────────────
           isVideo && !isRinging
-              ? const _VideoBackground(isLocalPreview: false)
+              ? _VideoBackground(
+                  isLocalPreview: false, track: state.remoteVideoTrack)
               : _AvatarBackground(name: displayName, avatarUrl: avatarUrl),
 
           // ── Dark overlay ─────────────────────────────────────
@@ -137,6 +145,28 @@ class _CallScreenState extends ConsumerState<CallScreen>
               child: _LocalVideoPreview(
                 isFrontCamera: state.isFrontCamera,
                 onFlip: ref.read(callProvider.notifier).flipCamera,
+                track: state.localVideoTrack,
+              ),
+            ),
+
+          // ── Media connection error (e.g. LiveKit not configured) ──
+          if (state.errorMessage != null && !isRinging)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 90,
+              left: 24,
+              right: 24,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  state.errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
               ),
             ),
 
@@ -200,20 +230,23 @@ class _CallScreenState extends ConsumerState<CallScreen>
   }
 }
 
-// ── Video background (Agora hook) ─────────────────────────────────
+// ── Video background (LiveKit) ─────────────────────────────────────
 
 class _VideoBackground extends StatelessWidget {
-  const _VideoBackground({required this.isLocalPreview});
+  const _VideoBackground({required this.isLocalPreview, this.track});
 
   final bool isLocalPreview;
 
+  /// The local camera preview or the remote participant's feed, once
+  /// LiveKit has it publishing/subscribed. Null while still connecting.
+  final lk.VideoTrack? track;
+
   @override
   Widget build(BuildContext context) {
-    // TODO: Replace with AgoraVideoView when agora_rtc_engine is added:
-    //   AgoraVideoView(controller: VideoViewController(
-    //     rtcEngine: _engine,
-    //     canvas: VideoCanvas(uid: isLocalPreview ? 0 : remoteUid),
-    //   ))
+    final track = this.track;
+    if (track != null) {
+      return lk.VideoTrackRenderer(track);
+    }
     return Container(
       color: const Color(0xFF1A1A2E),
       child: Center(
@@ -228,16 +261,10 @@ class _VideoBackground extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               isLocalPreview
-                  ? 'Local camera preview'
+                  ? 'Starting camera…'
                   : 'Connecting video…',
               style: AppTextStyles.captionText
                   .copyWith(color: Colors.white38),
-            ),
-            Text(
-              'Add agora_rtc_engine to pubspec for live video',
-              style: AppTextStyles.overline
-                  .copyWith(color: Colors.white24),
-              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -356,10 +383,12 @@ class _LocalVideoPreview extends StatelessWidget {
   const _LocalVideoPreview({
     required this.isFrontCamera,
     required this.onFlip,
+    this.track,
   });
 
   final bool isFrontCamera;
   final VoidCallback onFlip;
+  final lk.VideoTrack? track;
 
   @override
   Widget build(BuildContext context) {
@@ -373,7 +402,7 @@ class _LocalVideoPreview extends StatelessWidget {
           border: Border.all(color: Colors.white24),
         ),
         clipBehavior: Clip.hardEdge,
-        child: const _VideoBackground(isLocalPreview: true),
+        child: _VideoBackground(isLocalPreview: true, track: track),
       ),
     );
   }

@@ -13,7 +13,7 @@ import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/reels/presentation/screens/reels_screen.dart';
-import '../../features/post/presentation/screens/new_post_screen.dart';
+import 'new_post_route.dart';
 import '../../features/post/presentation/screens/post_detail_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
 import '../../features/events/presentation/screens/events_screen.dart';
@@ -22,9 +22,11 @@ import '../../features/events/presentation/screens/create_event_screen.dart';
 import '../../features/chat/presentation/screens/call_screen.dart';
 import '../../features/communities/presentation/screens/communities_screen.dart';
 import '../../features/communities/presentation/screens/community_detail_screen.dart';
+import '../../features/communities/presentation/screens/community_members_screen.dart';
 import '../../features/communities/presentation/screens/create_community_screen.dart';
 import '../../features/my_church/presentation/my_church_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
+import '../../features/profile/presentation/screens/follow_list_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/giving/presentation/screens/giving_screen.dart';
 import '../../features/giving/presentation/screens/giving_history_screen.dart';
@@ -32,6 +34,10 @@ import '../../features/marketplace/presentation/screens/marketplace_home_screen.
 import '../../features/marketplace/presentation/screens/create_product_screen.dart';
 import '../../features/marketplace/presentation/screens/product_detail_screen.dart';
 import '../../features/marketplace/presentation/screens/seller_orders_screen.dart';
+import '../../features/marketplace/presentation/screens/shop_screen.dart';
+import '../../features/marketplace/presentation/screens/manage_shop_screen.dart';
+import '../../features/marketplace/presentation/screens/shop_admin_screen.dart';
+import '../../features/portfolio/presentation/screens/portfolio_screen.dart';
 import '../../features/memberships/presentation/screens/tier_picker_screen.dart';
 import '../../features/memberships/presentation/screens/manage_subscription_screen.dart';
 import '../../features/chat/presentation/screens/chats_screen.dart';
@@ -39,13 +45,12 @@ import '../../features/chat/presentation/screens/chat_detail_screen.dart';
 import '../services/youtube_service.dart';
 import '../../features/home/presentation/screens/video_player_screen.dart';
 import '../../features/stories/presentation/screens/story_viewer_screen.dart';
-import '../../features/stories/presentation/screens/story_creator_screen.dart';
+import 'story_route.dart';
 import '../../features/stories/presentation/screens/updates_screen.dart';
 import '../../features/home/domain/models/story_model.dart';
-import '../../features/live/domain/models/live_stream_model.dart';
 import '../../features/live/data/live_repository.dart';
 import '../../features/live/presentation/screens/live_host_screen.dart';
-import '../../features/camera/presentation/screens/camera_recorder_screen.dart';
+import 'camera_route.dart';
 import '../../shared/widgets/main_shell.dart';
 
 part 'app_router.g.dart';
@@ -160,7 +165,10 @@ GoRouter appRouter(AppRouterRef ref) {
       // ── Post ──────────────────────────────────────────────────
       GoRoute(
         path: AppRoutes.newPost,
-        builder: (ctx, state) => NewPostScreen(
+        // buildNewPostScreen is a conditional export (see
+        // new_post_route.dart) — native gets the full photo_manager
+        // picker, web gets a separate, simpler image_picker-based flow.
+        builder: (ctx, state) => buildNewPostScreen(
           isReelMode: state.uri.queryParameters['mode'] == 'reel',
         ),
       ),
@@ -176,6 +184,22 @@ GoRouter appRouter(AppRouterRef ref) {
         path: '/community/:communityId',
         builder: (ctx, state) => CommunityDetailScreen(
           communityId: state.pathParameters['communityId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.communityMembers,
+        builder: (ctx, state) => CommunityMembersScreen(
+          communityId: state.pathParameters['communityId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.communityAnnouncements,
+        builder: (ctx, state) => CommunityChannelScreen(
+          communityId: state.pathParameters['communityId']!,
+          channelName: 'Announcements',
+          channelIcon: Icons.campaign_rounded,
+          iconColor: const Color(0xFF1A7A6B),
+          isAnnouncements: true,
         ),
       ),
       GoRoute(
@@ -291,6 +315,42 @@ GoRouter appRouter(AppRouterRef ref) {
         ),
       ),
 
+      // ── Shops ────────────────────────────────────────────────
+      GoRoute(
+        path: AppRoutes.manageShop,
+        builder: (ctx, state) => const ManageShopScreen(),
+      ),
+      // Must be registered before '/shop/:ownerId' below -- go_router
+      // matches path segments in list order, so the dynamic route would
+      // otherwise swallow this one (treating "admin" as an ownerId).
+      GoRoute(
+        path: AppRoutes.shopAdmin,
+        builder: (ctx, state) {
+          const tabNames = ['overview', 'listings', 'orders', 'settings'];
+          final tab = state.uri.queryParameters['tab'];
+          final index = tab == null ? 0 : tabNames.indexOf(tab);
+          return ShopAdminScreen(initialTab: index < 0 ? 0 : index);
+        },
+      ),
+      GoRoute(
+        path: '/shop/:ownerId',
+        builder: (ctx, state) => ShopScreen(
+          ownerId: state.pathParameters['ownerId']!,
+        ),
+      ),
+
+      // ── Portfolio (Profolio integration) ─────────────────────
+      GoRoute(
+        path: AppRoutes.myPortfolio,
+        builder: (ctx, state) => const PortfolioScreen(),
+      ),
+      GoRoute(
+        path: '/portfolio/:userId',
+        builder: (ctx, state) => PortfolioScreen(
+          userId: state.pathParameters['userId'],
+        ),
+      ),
+
       // ── Memberships ─────────────────────────────────────────
       GoRoute(
         path: AppRoutes.mySubscriptions,
@@ -311,7 +371,10 @@ GoRouter appRouter(AppRouterRef ref) {
       // ── Stories ───────────────────────────────────────────────
       GoRoute(
         path: '/story/create',
-        builder: (ctx, state) => const StoryCreatorScreen(),
+        // buildStoryCreatorScreen is a conditional export (see
+        // story_route.dart) — web gets a "not available yet" screen
+        // since the creator is built on dart:io + the camera package.
+        builder: (ctx, state) => buildStoryCreatorScreen(),
       ),
       GoRoute(
         path: '/stories/:userId',
@@ -327,6 +390,27 @@ GoRouter appRouter(AppRouterRef ref) {
         },
       ),
 
+      // ── Followers / Following ──────────────────────────────────
+      // Must be registered before '/user/:userId' below -- same
+      // ordering concern as '/shop/admin' vs '/shop/:ownerId' above:
+      // go_router matches path segments in list order, so the dynamic
+      // route would otherwise treat "followers"/"following" as the
+      // start of an (invalid, one-segment-short) match against itself
+      // rather than falling through to these more specific ones.
+      GoRoute(
+        path: AppRoutes.followers,
+        builder: (ctx, state) => FollowListScreen(
+          userId: state.pathParameters['userId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.following,
+        builder: (ctx, state) => FollowListScreen(
+          userId: state.pathParameters['userId']!,
+          initialTab: 1,
+        ),
+      ),
+
       // ── User Profile (other users) ────────────────────────────
       GoRoute(
         path: '/user/:userId',
@@ -336,25 +420,37 @@ GoRouter appRouter(AppRouterRef ref) {
       ),
 
       // ── Live streaming ────────────────────────────────────────
-      GoRoute(
-        path: AppRoutes.liveStart,
-        builder: (ctx, state) => const _LiveStartScreen(),
-      ),
-      GoRoute(
-        path: '/live/:streamId/watch',
-        builder: (ctx, state) {
-          final stream = state.extra as LiveStreamModel;
-          return LiveViewerScreen(stream: stream);
-        },
-      ),
+      // Routes unregistered for now — live streaming is temporarily
+      // disabled (1:1 audio/video calls remain fully available). The
+      // _LiveStartScreen class and the live/ feature's screens, models,
+      // and repository below are left in place, unlinked from routing
+      // and nav, so this can be turned back on later by re-adding these
+      // two GoRoutes and the "Go Live"/LIVE-tab entry points removed
+      // from home_screen.dart, new_post_screen.dart, and
+      // camera_recorder_screen.dart.
+      //
+      // GoRoute(
+      //   path: AppRoutes.liveStart,
+      //   builder: (ctx, state) => const _LiveStartScreen(),
+      // ),
+      // GoRoute(
+      //   path: '/live/:streamId/watch',
+      //   builder: (ctx, state) {
+      //     final stream = state.extra as LiveStreamModel;
+      //     return LiveViewerScreen(stream: stream);
+      //   },
+      // ),
 
       // ── Camera recorder ───────────────────────────────────────
       GoRoute(
         path: AppRoutes.cameraRecorder,
+        // buildCameraRecorderScreen is a conditional export (see
+        // camera_route.dart) — native gets the real recorder, web gets
+        // a "not available yet" screen (dart:io + the camera package
+        // aren't available there).
         builder: (ctx, state) {
-          final onSaved =
-              state.extra as void Function(String)? ;
-          return CameraRecorderScreen(onVideoSaved: onSaved);
+          final onSaved = state.extra as void Function(String)?;
+          return buildCameraRecorderScreen(onVideoSaved: onSaved);
         },
       ),
     ],

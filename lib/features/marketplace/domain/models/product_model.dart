@@ -13,6 +13,7 @@ class ProductModel {
     this.communityId,
     this.communityName,
     this.sellerName,
+    this.sellerAvatarUrl,
     this.description,
     this.images = const [],
     this.stock,
@@ -21,6 +22,7 @@ class ProductModel {
   final String id;
   final String sellerId;
   final String? sellerName;
+  final String? sellerAvatarUrl;
   final String? communityId;
   final String? communityName;
   final ProductType type;
@@ -43,6 +45,7 @@ class ProductModel {
       id: map['id'] as String,
       sellerId: map['seller_id'] as String,
       sellerName: seller?['full_name'] as String?,
+      sellerAvatarUrl: seller?['avatar_url'] as String?,
       communityId: map['community_id'] as String?,
       communityName: community?['name'] as String?,
       type: _parseType(map['type'] as String? ?? 'merch'),

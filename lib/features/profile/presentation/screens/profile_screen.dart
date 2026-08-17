@@ -10,8 +10,11 @@ import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
 
 import '../../../home/domain/models/post_model.dart';
+import '../../../marketplace/presentation/providers/marketplace_provider.dart';
+import '../../../portfolio/presentation/providers/portfolio_provider.dart';
 import '../../data/profile_detail_repository.dart';
 import '../providers/profile_provider.dart';
+import '../widgets/invite_friends_sheet.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key, this.userId});
@@ -119,13 +122,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         ref.read(profileProvider(_uid).notifier).toggleFollow(),
                     onMessage: () =>
                         context.push('${AppRoutes.chats}?userId=$_uid'),
+                    onPostsTap: () => _tabCtrl.animateTo(0),
+                    onFollowersTap: () => context.push('/user/$_uid/followers'),
+                    onFollowingTap: () => context.push('/user/$_uid/following'),
                   ),
                 ),
 
-                // ── Creator dashboard (own profile) ───────────
+                // ── Portfolio + shop (own profile), portfolio link
+                // (everyone else's) ────────────────────────────
+                //
+                // This replaces the old "Professional dashboard" bar --
+                // see _ProfessionalDashboard/_DashboardScreen/_StatCard
+                // below, left in place but unlinked from the UI rather
+                // than deleted, same pattern used elsewhere in this app
+                // for reversible feature removal.
                 if (state.isOwnProfile)
                   SliverToBoxAdapter(
-                    child: _ProfessionalDashboard(uid: _uid),
+                    child: _OwnProfilePortfolioShopBars(uid: _uid),
+                  )
+                else
+                  SliverToBoxAdapter(
+                    child: _PortfolioBar(
+                      icon: Icons.badge_outlined,
+                      title: 'Portfolio',
+                      subtitle: username.isNotEmpty
+                          ? "View $username's professional portfolio"
+                          : 'View their professional portfolio',
+                      // Always shown -- PortfolioScreen itself renders the
+                      // "hasn't published a portfolio yet" empty state
+                      // when there's nothing to view, so this never needs
+                      // to know in advance whether one exists.
+                      onTap: () => context.push('/portfolio/$_uid'),
+                    ),
                   ),
 
                 // ── Tab bar ────────────────────────────────────
@@ -224,75 +252,40 @@ class _TopBar extends StatelessWidget {
               onPressed: () => context.push('/story/create'),
             ),
 
-          // Center: username + chevron
+          // Center: username
+          //
+          // Previously had a dropdown chevron and a red "online" dot
+          // next to the username, both purely decorative -- the
+          // chevron implied a switcher menu that didn't exist
+          // (onTap: () {}), and the dot didn't represent anything real.
+          // Removed rather than left as dead affordances; add back once
+          // there's an actual menu behind it.
           Expanded(
-            child: GestureDetector(
-              onTap: () {},
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      username.isNotEmpty ? username : 'Profile',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.keyboard_arrow_down_rounded,
-                      color: Colors.white, size: 20),
-                  const SizedBox(width: 2),
-                  // Online/active dot
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.redAccent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
+            child: Text(
+              username.isNotEmpty ? username : 'Profile',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
 
-          // Right: notification + menu
-          if (isOwnProfile) ...[
-            Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.sync_rounded, color: Colors.white),
-                  onPressed: () {},
-                ),
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('9+',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                ),
-              ],
-            ),
+          // Right: menu
+          if (isOwnProfile)
+            // Previously also had a sync icon with a hardcoded "9+"
+            // badge here -- neither the icon nor the badge did
+            // anything real (onPressed: () {}, and the count wasn't
+            // wired to any actual unread state), so it read as a
+            // permanently-stuck notification. Removed for the same
+            // reason as the dropdown above.
             IconButton(
               icon: const Icon(Icons.menu_rounded, color: Colors.white),
               onPressed: onSettings,
-            ),
-          ] else
+            )
+          else
             IconButton(
               icon: const Icon(Icons.more_horiz_rounded, color: Colors.white),
               onPressed: () {},
@@ -326,6 +319,9 @@ class _ProfileHeader extends StatelessWidget {
     required this.onShare,
     required this.onFollow,
     required this.onMessage,
+    required this.onPostsTap,
+    required this.onFollowersTap,
+    required this.onFollowingTap,
   });
 
   final String fullName;
@@ -345,6 +341,9 @@ class _ProfileHeader extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onFollow;
   final VoidCallback onMessage;
+  final VoidCallback onPostsTap;
+  final VoidCallback onFollowersTap;
+  final VoidCallback onFollowingTap;
 
   @override
   Widget build(BuildContext context) {
@@ -354,53 +353,66 @@ class _ProfileHeader extends StatelessWidget {
 
         // ── Avatar (centered) ──────────────────────────────────
         Center(
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              CircleAvatar(
-                radius: 46,
-                backgroundImage: avatarUrl != null
-                    ? CachedNetworkImageProvider(avatarUrl!)
-                    : null,
-                backgroundColor: Colors.grey.shade800,
-                child: avatarUrl == null
-                    ? const Icon(Icons.person,
-                        color: Colors.white54, size: 46)
-                    : null,
-              ),
-              if (isOwnProfile)
-                Positioned(
-                  bottom: 0,
-                  right: -2,
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.black, width: 2),
-                    ),
-                    child: const Icon(Icons.add,
-                        color: Colors.white, size: 14),
-                  ),
+          // The "+" badge below used to be purely decorative -- it
+          // rendered but had no tap handler anywhere on it or the
+          // stack behind it, so tapping the avatar on your own
+          // profile did nothing. Wrapping the whole stack (not just
+          // the badge) gives a larger, easier target, consistent with
+          // how most apps treat "tap your own avatar" as "go change
+          // it" -- same destination as "Edit profile" below, which
+          // already has its own photo picker.
+          child: GestureDetector(
+            onTap: isOwnProfile
+                ? () => context.push(AppRoutes.editProfile)
+                : null,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: 46,
+                  backgroundImage: avatarUrl != null
+                      ? CachedNetworkImageProvider(avatarUrl!)
+                      : null,
+                  backgroundColor: Colors.grey.shade800,
+                  child: avatarUrl == null
+                      ? const Icon(Icons.person,
+                          color: Colors.white54, size: 46)
+                      : null,
                 ),
-              if (isVerified)
-                Positioned(
-                  bottom: 0,
-                  left: -2,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      shape: BoxShape.circle,
-                      border:
-                          Border.all(color: Colors.black, width: 1),
+                if (isOwnProfile)
+                  Positioned(
+                    bottom: 0,
+                    right: -2,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.black, width: 2),
+                      ),
+                      child: const Icon(Icons.add,
+                          color: Colors.white, size: 14),
                     ),
-                    child: const Icon(Icons.verified,
-                        color: AppColors.primary, size: 16),
                   ),
-                ),
-            ],
+                if (isVerified)
+                  Positioned(
+                    bottom: 0,
+                    left: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        shape: BoxShape.circle,
+                        border:
+                            Border.all(color: Colors.black, width: 1),
+                      ),
+                      child: const Icon(Icons.verified,
+                          color: AppColors.primary, size: 16),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
 
@@ -432,11 +444,17 @@ class _ProfileHeader extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _StatCol(count: postCount, label: 'posts'),
+            _StatCol(count: postCount, label: 'posts', onTap: onPostsTap),
             _VertDivider(),
-            _StatCol(count: followerCount, label: 'followers'),
+            _StatCol(
+                count: followerCount,
+                label: 'followers',
+                onTap: onFollowersTap),
             _VertDivider(),
-            _StatCol(count: followingCount, label: 'following'),
+            _StatCol(
+                count: followingCount,
+                label: 'following',
+                onTap: onFollowingTap),
           ],
         ),
 
@@ -517,7 +535,8 @@ class _ProfileHeader extends StatelessWidget {
                     const SizedBox(width: 8),
                     _ActionBtn(
                       icon: Icons.person_add_outlined,
-                      onTap: () {},
+                      onTap: () => showInviteFriendsSheet(context,
+                          username: username),
                       isIcon: true,
                     ),
                   ],
@@ -557,29 +576,33 @@ class _ProfileHeader extends StatelessWidget {
 }
 
 class _StatCol extends StatelessWidget {
-  const _StatCol({required this.count, required this.label});
+  const _StatCol({required this.count, required this.label, required this.onTap});
   final int count;
   final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          Text(
-            _fmt(count),
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white60, fontSize: 12),
-          ),
-        ],
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          children: [
+            Text(
+              _fmt(count),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white60, fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -687,6 +710,131 @@ class _ActionBtn extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────
 // Professional dashboard (TikTok-style banner)
+// ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// Portfolio / shop entry-point bar (Professional-dashboard-style row)
+// ─────────────────────────────────────────────────────────────────
+
+/// The own-profile pair of _PortfolioBar rows, split out so it can watch
+/// the shop/portfolio status providers itself -- someone else's profile
+/// never builds this widget at all, so it never pays for those lookups.
+/// Subtitles fall back to the plain "set this up" copy while loading or
+/// on error, so a slow/failed status check never blocks the bar itself
+/// from being tappable.
+class _OwnProfilePortfolioShopBars extends ConsumerWidget {
+  const _OwnProfilePortfolioShopBars({required this.uid});
+  final String uid;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final portfolioUrlAsync = ref.watch(publishedPortfolioUrlProvider(uid));
+    final shopAsync = ref.watch(myShopProvider);
+
+    final portfolioSubtitle = portfolioUrlAsync.maybeWhen(
+      data: (url) => url != null
+          ? 'Your portfolio is live — tap to view or edit it'
+          : 'Create or edit your professional portfolio',
+      orElse: () => 'Create or edit your professional portfolio',
+    );
+
+    final shopSubtitle = shopAsync.maybeWhen(
+      data: (shop) => shop == null
+          ? 'Set up your storefront and list items for sale'
+          : (shop.isPublished
+              ? '${shop.name} · live in the marketplace'
+              : '${shop.name} · draft, only you can see it'),
+      orElse: () => 'Set up your storefront and list items for sale',
+    );
+
+    return Column(
+      children: [
+        _PortfolioBar(
+          icon: Icons.badge_outlined,
+          title: 'Make / View Portfolio',
+          subtitle: portfolioSubtitle,
+          onTap: () => context.push(AppRoutes.myPortfolio),
+        ),
+        _PortfolioBar(
+          icon: Icons.storefront_rounded,
+          title: 'My Shop',
+          subtitle: shopSubtitle,
+          // The dashboard itself handles "no shop yet" with its own
+          // setup CTA (see ShopAdminScreen's Overview/Settings tabs), so
+          // this is always the same destination regardless of whether a
+          // shop exists -- one entry point, not two depending on state.
+          onTap: () => context.push(AppRoutes.shopAdmin),
+        ),
+      ],
+    );
+  }
+}
+
+class _PortfolioBar extends StatelessWidget {
+  const _PortfolioBar({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111111),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white70, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white60, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Old "Professional dashboard" bar -- no longer linked from the UI
+// (replaced above by _PortfolioBar / the Portfolio+Shop entry points),
+// left in place rather than deleted in case it's wanted back later.
+// To re-enable: swap a _PortfolioBar back out for
+// `_ProfessionalDashboard(uid: _uid)` in the own-profile branch above.
 // ─────────────────────────────────────────────────────────────────
 
 class _ProfessionalDashboard extends ConsumerStatefulWidget {

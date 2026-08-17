@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import '../../../core/services/supabase_service.dart';
 import '../../boosts/data/boosts_repository.dart';
@@ -182,10 +182,13 @@ class EventsRepository {
 
   // ── Upload cover ───────────────────────────────────────────────
 
-  Future<String> uploadEventCover(File file, String eventId) async {
-    final ext = file.path.split('.').last;
-    final path = 'events/$eventId/cover.$ext';
-    await _client.storage.from('event-covers').upload(path, file);
+  Future<String> uploadEventCover(
+    Uint8List bytes,
+    String extension,
+    String eventId,
+  ) async {
+    final path = 'events/$eventId/cover.$extension';
+    await _client.storage.from('event-covers').uploadBinary(path, bytes);
     return _client.storage.from('event-covers').getPublicUrl(path);
   }
 

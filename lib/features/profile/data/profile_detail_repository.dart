@@ -496,6 +496,25 @@ class ProfileDetailRepository {
         .eq('following_id', uid);
   }
 
+  /// Removes [followerUserId] as a follower of the current user -- i.e.
+  /// the reverse direction from [toggleFollow]. Only meaningful from the
+  /// current user's own Followers list (there's no "remove" action on
+  /// someone else's followers, or on people *you* follow -- that's just
+  /// unfollowing, already covered by toggleFollow). Deletes whatever
+  /// status the row is in (accepted, or a still-pending request they
+  /// sent you), same as rejectFollowRequest above -- this is really the
+  /// same delete, just reachable from the Followers list instead of the
+  /// Follow Requests screen.
+  Future<void> removeFollower(String followerUserId) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return;
+    await _db
+        .from('follows')
+        .delete()
+        .eq('follower_id', followerUserId)
+        .eq('following_id', uid);
+  }
+
   // ── Account privacy ────────────────────────────────────────
 
   Future<void> setPrivateAccount(bool isPrivate) async {

@@ -85,6 +85,8 @@ class _FollowListState extends State<_FollowList>
   static const _pageSize = 30;
 
   final _users = <Map<String, dynamic>>[];
+  final _searchCtrl = TextEditingController();
+  String _searchQuery = '';
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = true;
@@ -94,10 +96,24 @@ class _FollowListState extends State<_FollowList>
   @override
   bool get wantKeepAlive => true;
 
+  /// Only your OWN followers list gets the Instagram-style "Remove"
+  /// action -- you can't remove someone else's follower, and for people
+  /// *you* follow, unfollowing (the existing Follow/Following toggle)
+  /// already covers it.
+  bool get _isOwnFollowersList =>
+      widget.mode == _FollowListMode.followers &&
+      widget.userId == SupabaseService.currentUserId;
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<List<Map<String, dynamic>>> _fetchPage(int page) {
@@ -164,6 +180,35 @@ class _FollowListState extends State<_FollowList>
     setState(() => user['is_following'] = result['is_following']);
   }
 
+  Future<void> _removeFollower(Map<String, dynamic> user) async {
+    final id = user['id'] as String;
+    final index = _users.indexWhere((u) => u['id'] == id);
+    if (index == -1) return;
+
+    // Optimistic removal -- put it back with a snackbar if the delete
+    // actually fails server-side.
+    final removed = _users[index];
+    setState(() => _users.removeAt(index));
+    try {
+      await ProfileDetailRepository.instance.removeFollower(id);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _users.insert(index, removed));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not remove follower — please try again.')));
+    }
+  }
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_searchQuery.isEmpty) return _users;
+    final q = _searchQuery.toLowerCase();
+    return _users.where((u) {
+      final username = (u['username'] as String? ?? '').toLowerCase();
+      final fullName = (u['full_name'] as String? ?? '').toLowerCase();
+      return username.contains(q) || fullName.contains(q);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -202,33 +247,92 @@ class _FollowListState extends State<_FollowList>
     }
 
     final currentUid = SupabaseService.currentUserId;
+    final filtered = _filtered;
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: NotificationListener<ScrollNotification>(
-        onNotification: (n) {
-          if (n.metrics.pixels > n.metrics.maxScrollExtent - 200) _loadMore();
-          return false;
-        },
-        child: ListView.builder(
-          itemCount: _users.length + (_hasMore ? 1 : 0),
-          itemBuilder: (context, index) {
-            if (index >= _users.length) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: Center(
-                    child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2))),
-              );
-            }
-            return _FollowListRow(
-              user: _users[index],
-              isSelf: _users[index]['id'] == currentUid,
-              onToggleFollow: () => _toggleFollow(_users[index]),
-            );
-          },
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: _SearchField(
+            controller: _searchCtrl,
+            onChanged: (q) => setState(() => _searchQuery = q),
+          ),
+        ),
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(
+                  child: Text(
+                    'No results found',
+                    style: const TextStyle(color: Colors.white54),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (n) {
+                      if (n.metrics.pixels >
+                          n.metrics.maxScrollExtent - 200) {
+                        _loadMore();
+                      }
+                      return false;
+                    },
+                    child: ListView.builder(
+                      itemCount: filtered.length +
+                          (_hasMore && _searchQuery.isEmpty ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index >= filtered.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(
+                                child: SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2))),
+                          );
+                        }
+                        final user = filtered[index];
+                        return _FollowListRow(
+                          user: user,
+                          isSelf: user['id'] == currentUid,
+                          onToggleFollow: () => _toggleFollow(user),
+                          showRemove: _isOwnFollowersList,
+                          onRemove: () => _removeFollower(user),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.controller, required this.onChanged});
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface2,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        decoration: const InputDecoration(
+          hintText: 'Search',
+          hintStyle: TextStyle(color: Colors.white38),
+          prefixIcon: Icon(Icons.search, color: Colors.white38, size: 20),
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(vertical: 12),
         ),
       ),
     );
@@ -240,11 +344,18 @@ class _FollowListRow extends StatelessWidget {
     required this.user,
     required this.isSelf,
     required this.onToggleFollow,
+    required this.showRemove,
+    required this.onRemove,
   });
 
   final Map<String, dynamic> user;
   final bool isSelf;
   final VoidCallback onToggleFollow;
+
+  /// Instagram-style "Remove" trailing button, only ever true on your own
+  /// Followers tab -- see _FollowListState._isOwnFollowersList.
+  final bool showRemove;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -274,62 +385,126 @@ class _FollowListRow extends StatelessWidget {
               )
             : null,
       ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              displayName.isNotEmpty ? displayName : 'User',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500),
-              // maxLines wasn't set here -- TextOverflow.ellipsis only
-              // does anything on the LAST allowed line, and Text's
-              // maxLines defaults to unlimited. Without a line cap the
-              // name just wrapped to fit whatever narrow width this
-              // Flexible was squeezed into (between the avatar and the
-              // Follow button), which on a phone-width screen meant one
-              // or two characters per line, stacked vertically all the
-              // way down -- exactly what showed up in the screenshot.
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (isVerified) ...[
-            const SizedBox(width: 4),
-            const Icon(Icons.verified, color: AppColors.primary, size: 14),
-          ],
-        ],
-      ),
-      subtitle: username.isNotEmpty
-          ? Text('@$username',
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis)
-          : null,
-      trailing: isSelf
-          ? null
-          : SizedBox(
-              height: 32,
-              child: OutlinedButton(
-                onPressed: onToggleFollow,
-                style: OutlinedButton.styleFrom(
-                  backgroundColor:
-                      isFollowing ? Colors.transparent : AppColors.primary,
-                  side: BorderSide(
-                    color: isFollowing ? Colors.white24 : AppColors.primary,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                ),
-                child: Text(
-                  isFollowing ? 'Following' : 'Follow',
-                  style: TextStyle(
-                    color: isFollowing ? Colors.white70 : Colors.white,
-                    fontSize: 12,
+      title: showRemove
+          // Own-followers layout: username on top (Instagram doesn't
+          // repeat the @ here since the row's whole first line already
+          // reads as a handle), with an inline "· Follow" for anyone you
+          // don't already follow back.
+          ? Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    username.isNotEmpty ? username : 'User',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
+                if (isVerified) ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.verified, color: AppColors.primary, size: 14),
+                ],
+                if (!isSelf && !isFollowing)
+                  GestureDetector(
+                    onTap: onToggleFollow,
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: 4),
+                      child: Text(
+                        '· Follow',
+                        style: TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+              ],
+            )
+          : Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    displayName.isNotEmpty ? displayName : 'User',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500),
+                    // maxLines wasn't set here -- TextOverflow.ellipsis
+                    // only does anything on the LAST allowed line, and
+                    // Text's maxLines defaults to unlimited. Without a
+                    // line cap the name just wrapped to fit whatever
+                    // narrow width this Flexible was squeezed into
+                    // (between the avatar and the Follow button), which
+                    // on a phone-width screen meant one or two characters
+                    // per line, stacked vertically all the way down --
+                    // exactly what showed up in the screenshot.
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (isVerified) ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.verified, color: AppColors.primary, size: 14),
+                ],
+              ],
             ),
+      subtitle: showRemove
+          ? (fullName != null && fullName.isNotEmpty
+              ? Text(fullName,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis)
+              : null)
+          : (username.isNotEmpty
+              ? Text('@$username',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis)
+              : null),
+      trailing: showRemove
+          ? (isSelf
+              ? null
+              : SizedBox(
+                  height: 32,
+                  child: OutlinedButton(
+                    onPressed: onRemove,
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: AppColors.darkSurface2,
+                      side: const BorderSide(color: AppColors.darkBorder),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    child: const Text(
+                      'Remove',
+                      style: TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                ))
+          : (isSelf
+              ? null
+              : SizedBox(
+                  height: 32,
+                  child: OutlinedButton(
+                    onPressed: onToggleFollow,
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor:
+                          isFollowing ? Colors.transparent : AppColors.primary,
+                      side: BorderSide(
+                        color: isFollowing ? Colors.white24 : AppColors.primary,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    child: Text(
+                      isFollowing ? 'Following' : 'Follow',
+                      style: TextStyle(
+                        color: isFollowing ? Colors.white70 : Colors.white,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                )),
     );
   }
 }

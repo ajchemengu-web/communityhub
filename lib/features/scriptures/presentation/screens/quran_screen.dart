@@ -361,8 +361,6 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
     final token = ++_playToken;
     final ayah = _ayahs[index];
     final globalNumber = int.tryParse(ayah['globalNumber'] ?? '') ?? 0;
-    final url = QuranAudioRepository.instance
-        .arabicAyahAudioUrl(_reciter, globalNumber);
     setState(() {
       _ayahIndex = index;
       _phase = _AyahAudioPhase.arabic;
@@ -382,7 +380,10 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
       }
       if (token != _playToken) return; // superseded while stopping
       try {
-        await _player.play(UrlSource(url));
+        final source = await QuranAudioRepository.instance
+            .arabicAyahAudioSource(_reciter, globalNumber);
+        if (token != _playToken) return;
+        await _player.play(source);
       } catch (e) {
         // The audio CDN is a third-party host with no uptime guarantee.
         // One quiet retry after a short pause turns a real fraction of
@@ -392,7 +393,10 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
             'Quran audio playback error, retrying once (verse $index, surah ${widget.surah.number}): $e');
         await Future.delayed(const Duration(milliseconds: 600));
         if (token != _playToken) return;
-        await _player.play(UrlSource(url));
+        final source = await QuranAudioRepository.instance
+            .arabicAyahAudioSource(_reciter, globalNumber);
+        if (token != _playToken) return;
+        await _player.play(source);
       }
     } catch (e) {
       debugPrint(
@@ -414,8 +418,6 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
   /// meaningful if the user backs out of full narration mid-playback.
   Future<void> _playFullNarration() async {
     final token = ++_playToken;
-    final url = QuranAudioRepository.instance
-        .swahiliTranslationAudioUrl(widget.surah.number);
     setState(() {
       _phase = _AyahAudioPhase.fullNarration;
       _audioBusy = true;
@@ -431,13 +433,19 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
       }
       if (token != _playToken) return;
       try {
-        await _player.play(UrlSource(url));
+        final source = await QuranAudioRepository.instance
+            .swahiliTranslationAudioSource(widget.surah.number);
+        if (token != _playToken) return;
+        await _player.play(source);
       } catch (e) {
         debugPrint(
             'Kiswahili full-narration playback error, retrying once (surah ${widget.surah.number}): $e');
         await Future.delayed(const Duration(milliseconds: 600));
         if (token != _playToken) return;
-        await _player.play(UrlSource(url));
+        final source = await QuranAudioRepository.instance
+            .swahiliTranslationAudioSource(widget.surah.number);
+        if (token != _playToken) return;
+        await _player.play(source);
       }
     } catch (e) {
       debugPrint(

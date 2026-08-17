@@ -1,3 +1,6 @@
+import 'dart:typed_data' show Uint8List;
+
+import 'package:audioplayers/audioplayers.dart' show Source, UrlSource, BytesSource;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -170,5 +173,53 @@ class QuranAudioRepository {
     final padded = surahNumber.toString().padLeft(3, '0');
     return '$_swahiliTranslationBase/'
         '${padded}VideoQuran.Net-Swahili-Kiswahili-Translation.mp3';
+  }
+
+  // ── Web playback sources ──────────────────────────────────
+  //
+  // A plain `<audio>` element (what `UrlSource` becomes under the hood
+  // on Flutter web) has no way to attach a custom header to the
+  // request it makes -- that's a browser limitation on media elements,
+  // not something audioplayers or this app controls. The proxy URLs
+  // above work around the *CORS* problem by putting the Supabase
+  // anon key in the `?apikey=` query string instead of a header. That
+  // used to be enough, but this project's Supabase gateway (confirmed
+  // directly via the Edge Functions dashboard's "Test" tool: the same
+  // key as a query param gets 401 "Invalid credentials", the identical
+  // key as a header gets 200) only honors `apikey` when it's a header.
+  //
+  // So on web, fetch the audio bytes ourselves with dio (which *can*
+  // set a header) and hand the player an in-memory [BytesSource]
+  // instead of a URL at all. Native platforms never went through the
+  // proxy in the first place (see arabicAyahAudioUrl/
+  // swahiliTranslationAudioUrl above) and keep using [UrlSource]
+  // unchanged.
+
+  /// Resolves [arabicAyahAudioUrl] into a ready-to-play [Source].
+  Future<Source> arabicAyahAudioSource(
+      ReciterModel reciter, int globalAyahNumber,
+      {int bitrate = 128}) async {
+    final url =
+        arabicAyahAudioUrl(reciter, globalAyahNumber, bitrate: bitrate);
+    if (!kIsWeb) return UrlSource(url);
+    return BytesSource(await _fetchProxiedBytes(url));
+  }
+
+  /// Resolves [swahiliTranslationAudioUrl] into a ready-to-play [Source].
+  Future<Source> swahiliTranslationAudioSource(int surahNumber) async {
+    final url = swahiliTranslationAudioUrl(surahNumber);
+    if (!kIsWeb) return UrlSource(url);
+    return BytesSource(await _fetchProxiedBytes(url));
+  }
+
+  Future<Uint8List> _fetchProxiedBytes(String url) async {
+    final response = await Dio().get<List<int>>(
+      url,
+      options: Options(
+        responseType: ResponseType.bytes,
+        headers: {'apikey': AppConstants.supabaseAnonKey},
+      ),
+    );
+    return Uint8List.fromList(response.data ?? const []);
   }
 }

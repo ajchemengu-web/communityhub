@@ -26,6 +26,7 @@ import '../../features/communities/presentation/screens/community_members_screen
 import '../../features/communities/presentation/screens/create_community_screen.dart';
 import '../../features/my_church/presentation/my_church_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
+import '../../features/profile/presentation/screens/follow_list_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/giving/presentation/screens/giving_screen.dart';
 import '../../features/giving/presentation/screens/giving_history_screen.dart';
@@ -387,6 +388,27 @@ GoRouter appRouter(AppRouterRef ref) {
             initialIndex: index,
           );
         },
+      ),
+
+      // ── Followers / Following ──────────────────────────────────
+      // Must be registered before '/user/:userId' below -- same
+      // ordering concern as '/shop/admin' vs '/shop/:ownerId' above:
+      // go_router matches path segments in list order, so the dynamic
+      // route would otherwise treat "followers"/"following" as the
+      // start of an (invalid, one-segment-short) match against itself
+      // rather than falling through to these more specific ones.
+      GoRoute(
+        path: AppRoutes.followers,
+        builder: (ctx, state) => FollowListScreen(
+          userId: state.pathParameters['userId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.following,
+        builder: (ctx, state) => FollowListScreen(
+          userId: state.pathParameters['userId']!,
+          initialTab: 1,
+        ),
       ),
 
       // ── User Profile (other users) ────────────────────────────

@@ -49,7 +49,22 @@ class ProfileRepository {
           ),
         );
 
-    return SupabaseService.storage.from('avatars').getPublicUrl(path);
+    // Every user's avatar lives at this same fixed path (one object per
+    // user, overwritten on each re-upload) so storage doesn't accumulate
+    // an ever-growing pile of orphaned old avatar files the way e.g.
+    // post media does with its timestamped filenames. The tradeoff:
+    // re-uploading returns the EXACT same public URL as before, and
+    // every reader of that URL keys its cache off the URL string alone
+    // -- CachedNetworkImage (used everywhere this app renders an
+    // avatar) and the browser's own HTTP cache on web -- so without
+    // something to distinguish this upload from the last one, they keep
+    // serving the old bytes even though both the storage object and the
+    // `avatar_url` database column updated correctly. This is what made
+    // a freshly-saved profile photo appear not to change. A
+    // cache-busting query param forces every reader to treat it as a
+    // new image.
+    final publicUrl = SupabaseService.storage.from('avatars').getPublicUrl(path);
+    return '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
   }
 
   // ── Create / upsert profile ───────────────────────────────

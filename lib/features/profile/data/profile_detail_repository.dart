@@ -340,6 +340,109 @@ class ProfileDetailRepository {
     return rows.map((r) => Map<String, dynamic>.from(r as Map)).toList();
   }
 
+  // ── Followers / Following lists ───────────────────────────
+  //
+  // Generic versions of fetchMyFollowers -- that one only ever looks up
+  // the CURRENT user's own followers (for the story audience picker);
+  // these take any [userId] and back the Followers/Following screen
+  // reachable from the post/followers/following counts on a profile.
+
+  /// Accounts that follow [userId] (accepted only), newest first. Each
+  /// entry has `is_following` set relative to the CURRENT signed-in
+  /// user, so the list screen can offer a Follow/Following action per
+  /// row without a separate query per user.
+  Future<List<Map<String, dynamic>>> fetchFollowers(String userId,
+      {int page = 0, int pageSize = 30}) {
+    return _fetchFollowConnections(
+      userId: userId,
+      filterColumn: 'following_id',
+      joinColumn: 'follower_id',
+      joinAlias: 'follower',
+      page: page,
+      pageSize: pageSize,
+    );
+  }
+
+  /// Accounts [userId] follows (accepted only), newest first.
+  Future<List<Map<String, dynamic>>> fetchFollowing(String userId,
+      {int page = 0, int pageSize = 30}) {
+    return _fetchFollowConnections(
+      userId: userId,
+      filterColumn: 'follower_id',
+      joinColumn: 'following_id',
+      joinAlias: 'following',
+      page: page,
+      pageSize: pageSize,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchFollowConnections({
+    required String userId,
+    required String filterColumn,
+    required String joinColumn,
+    required String joinAlias,
+    required int page,
+    required int pageSize,
+  }) async {
+    final range = [page * pageSize, (page + 1) * pageSize - 1];
+
+    List<dynamic> rows;
+    try {
+      rows = await _db
+          .from('follows')
+          .select('$joinColumn, $joinAlias:users!$joinColumn'
+              '(id, username, full_name, avatar_url, is_verified, is_private)')
+          .eq(filterColumn, userId)
+          .eq('status', 'accepted')
+          .order('created_at', ascending: false)
+          .range(range[0], range[1]) as List;
+    } catch (_) {
+      return [];
+    }
+
+    var users = rows
+        .map((r) => Map<String, dynamic>.from(
+            (r as Map)[joinAlias] as Map? ?? {}))
+        .where((u) => u['id'] != null)
+        .toList();
+
+    final excludedIds =
+        (await BlockService.instance.fetchExcludedUserIds()).toSet();
+    if (excludedIds.isNotEmpty) {
+      users = users.where((u) => !excludedIds.contains(u['id'])).toList();
+    }
+    if (users.isEmpty) return users;
+
+    // Which of these users does the CURRENT viewer already follow --
+    // one batched query for the whole page rather than one per row.
+    final currentUid = SupabaseService.currentUserId;
+    if (currentUid == null) {
+      for (final u in users) {
+        u['is_following'] = false;
+      }
+      return users;
+    }
+    try {
+      final ids = users.map((u) => u['id'] as String).toList();
+      final following = await _db
+          .from('follows')
+          .select('following_id')
+          .eq('follower_id', currentUid)
+          .eq('status', 'accepted')
+          .inFilter('following_id', ids) as List;
+      final followingIds =
+          following.map((r) => (r as Map)['following_id'] as String).toSet();
+      for (final u in users) {
+        u['is_following'] = followingIds.contains(u['id']);
+      }
+    } catch (_) {
+      for (final u in users) {
+        u['is_following'] = false;
+      }
+    }
+    return users;
+  }
+
   // ── Follow requests (private accounts) ────────────────────
 
   Future<List<Map<String, dynamic>>> fetchFollowRequests() async {

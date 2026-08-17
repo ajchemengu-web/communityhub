@@ -122,6 +122,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         ref.read(profileProvider(_uid).notifier).toggleFollow(),
                     onMessage: () =>
                         context.push('${AppRoutes.chats}?userId=$_uid'),
+                    onPostsTap: () => _tabCtrl.animateTo(0),
+                    onFollowersTap: () => context.push('/user/$_uid/followers'),
+                    onFollowingTap: () => context.push('/user/$_uid/following'),
                   ),
                 ),
 
@@ -249,75 +252,40 @@ class _TopBar extends StatelessWidget {
               onPressed: () => context.push('/story/create'),
             ),
 
-          // Center: username + chevron
+          // Center: username
+          //
+          // Previously had a dropdown chevron and a red "online" dot
+          // next to the username, both purely decorative -- the
+          // chevron implied a switcher menu that didn't exist
+          // (onTap: () {}), and the dot didn't represent anything real.
+          // Removed rather than left as dead affordances; add back once
+          // there's an actual menu behind it.
           Expanded(
-            child: GestureDetector(
-              onTap: () {},
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      username.isNotEmpty ? username : 'Profile',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.keyboard_arrow_down_rounded,
-                      color: Colors.white, size: 20),
-                  const SizedBox(width: 2),
-                  // Online/active dot
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.redAccent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
+            child: Text(
+              username.isNotEmpty ? username : 'Profile',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
 
-          // Right: notification + menu
-          if (isOwnProfile) ...[
-            Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.sync_rounded, color: Colors.white),
-                  onPressed: () {},
-                ),
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('9+',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                ),
-              ],
-            ),
+          // Right: menu
+          if (isOwnProfile)
+            // Previously also had a sync icon with a hardcoded "9+"
+            // badge here -- neither the icon nor the badge did
+            // anything real (onPressed: () {}, and the count wasn't
+            // wired to any actual unread state), so it read as a
+            // permanently-stuck notification. Removed for the same
+            // reason as the dropdown above.
             IconButton(
               icon: const Icon(Icons.menu_rounded, color: Colors.white),
               onPressed: onSettings,
-            ),
-          ] else
+            )
+          else
             IconButton(
               icon: const Icon(Icons.more_horiz_rounded, color: Colors.white),
               onPressed: () {},
@@ -351,6 +319,9 @@ class _ProfileHeader extends StatelessWidget {
     required this.onShare,
     required this.onFollow,
     required this.onMessage,
+    required this.onPostsTap,
+    required this.onFollowersTap,
+    required this.onFollowingTap,
   });
 
   final String fullName;
@@ -370,6 +341,9 @@ class _ProfileHeader extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onFollow;
   final VoidCallback onMessage;
+  final VoidCallback onPostsTap;
+  final VoidCallback onFollowersTap;
+  final VoidCallback onFollowingTap;
 
   @override
   Widget build(BuildContext context) {
@@ -379,53 +353,66 @@ class _ProfileHeader extends StatelessWidget {
 
         // ── Avatar (centered) ──────────────────────────────────
         Center(
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              CircleAvatar(
-                radius: 46,
-                backgroundImage: avatarUrl != null
-                    ? CachedNetworkImageProvider(avatarUrl!)
-                    : null,
-                backgroundColor: Colors.grey.shade800,
-                child: avatarUrl == null
-                    ? const Icon(Icons.person,
-                        color: Colors.white54, size: 46)
-                    : null,
-              ),
-              if (isOwnProfile)
-                Positioned(
-                  bottom: 0,
-                  right: -2,
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.black, width: 2),
-                    ),
-                    child: const Icon(Icons.add,
-                        color: Colors.white, size: 14),
-                  ),
+          // The "+" badge below used to be purely decorative -- it
+          // rendered but had no tap handler anywhere on it or the
+          // stack behind it, so tapping the avatar on your own
+          // profile did nothing. Wrapping the whole stack (not just
+          // the badge) gives a larger, easier target, consistent with
+          // how most apps treat "tap your own avatar" as "go change
+          // it" -- same destination as "Edit profile" below, which
+          // already has its own photo picker.
+          child: GestureDetector(
+            onTap: isOwnProfile
+                ? () => context.push(AppRoutes.editProfile)
+                : null,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: 46,
+                  backgroundImage: avatarUrl != null
+                      ? CachedNetworkImageProvider(avatarUrl!)
+                      : null,
+                  backgroundColor: Colors.grey.shade800,
+                  child: avatarUrl == null
+                      ? const Icon(Icons.person,
+                          color: Colors.white54, size: 46)
+                      : null,
                 ),
-              if (isVerified)
-                Positioned(
-                  bottom: 0,
-                  left: -2,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      shape: BoxShape.circle,
-                      border:
-                          Border.all(color: Colors.black, width: 1),
+                if (isOwnProfile)
+                  Positioned(
+                    bottom: 0,
+                    right: -2,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.black, width: 2),
+                      ),
+                      child: const Icon(Icons.add,
+                          color: Colors.white, size: 14),
                     ),
-                    child: const Icon(Icons.verified,
-                        color: AppColors.primary, size: 16),
                   ),
-                ),
-            ],
+                if (isVerified)
+                  Positioned(
+                    bottom: 0,
+                    left: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        shape: BoxShape.circle,
+                        border:
+                            Border.all(color: Colors.black, width: 1),
+                      ),
+                      child: const Icon(Icons.verified,
+                          color: AppColors.primary, size: 16),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
 
@@ -457,11 +444,17 @@ class _ProfileHeader extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _StatCol(count: postCount, label: 'posts'),
+            _StatCol(count: postCount, label: 'posts', onTap: onPostsTap),
             _VertDivider(),
-            _StatCol(count: followerCount, label: 'followers'),
+            _StatCol(
+                count: followerCount,
+                label: 'followers',
+                onTap: onFollowersTap),
             _VertDivider(),
-            _StatCol(count: followingCount, label: 'following'),
+            _StatCol(
+                count: followingCount,
+                label: 'following',
+                onTap: onFollowingTap),
           ],
         ),
 
@@ -583,29 +576,33 @@ class _ProfileHeader extends StatelessWidget {
 }
 
 class _StatCol extends StatelessWidget {
-  const _StatCol({required this.count, required this.label});
+  const _StatCol({required this.count, required this.label, required this.onTap});
   final int count;
   final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          Text(
-            _fmt(count),
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white60, fontSize: 12),
-          ),
-        ],
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          children: [
+            Text(
+              _fmt(count),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white60, fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }

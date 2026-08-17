@@ -40,23 +40,42 @@ class ProfileDetailRepository {
     if (row == null) {
       final currentUid = SupabaseService.currentUserId;
       if (currentUid != null && currentUid == userId) {
-        final authUser = SupabaseService.client.auth.currentUser;
-        final email = authUser?.email ?? '';
-        final defaultUsername =
-            email.isNotEmpty ? email.split('@').first : 'user_${userId.substring(0, 8)}';
-        await _db.from('users').upsert({
-          'id': userId,
-          'username': defaultUsername,
-          'full_name': defaultUsername,
-          'email': email,
-          'is_verified': false,
-        });
-        row = await _db
-            .from('users')
-            .select(
-                'id, username, full_name, avatar_url, bio, church_name, website, is_verified, is_private, created_at')
-            .eq('id', userId)
-            .maybeSingle();
+        // This upsert can fail for the exact same reason the signup
+        // trigger can (see 20260817_fix_signup_trigger_never_blocks_-
+        // account_creation.sql) -- an unexpected constraint on a
+        // public.users column neither of them knows to set. Previously
+        // uncaught here: that exception propagated all the way out of
+        // fetchProfile(), the caller's try/catch (ProfileNotifier._load)
+        // left profileData null, and profileData?['id'] == currentUid
+        // (ProfileState.isOwnProfile) then evaluated to null == uid --
+        // false. The profile screen would render as if you were looking
+        // at a stranger's empty account (Follow/Message buttons, no
+        // name, no photo) instead of your own broken one, which is
+        // exactly backwards and very confusing to hit right after
+        // registering. Falling through to the stub below on failure at
+        // least gets isOwnProfile right; the stub already has id: userId.
+        try {
+          final authUser = SupabaseService.client.auth.currentUser;
+          final email = authUser?.email ?? '';
+          final defaultUsername = email.isNotEmpty
+              ? email.split('@').first
+              : 'user_${userId.substring(0, 8)}';
+          await _db.from('users').upsert({
+            'id': userId,
+            'username': defaultUsername,
+            'full_name': defaultUsername,
+            'email': email,
+            'is_verified': false,
+          });
+          row = await _db
+              .from('users')
+              .select(
+                  'id, username, full_name, avatar_url, bio, church_name, website, is_verified, is_private, created_at')
+              .eq('id', userId)
+              .maybeSingle();
+        } catch (_) {
+          // Fall through to the stub below.
+        }
       }
       row ??= {
         'id': userId,

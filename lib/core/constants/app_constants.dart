@@ -6,6 +6,9 @@ abstract class AppConstants {
   static const String appName = 'CommunityHub';
   static const String appTagline = 'Faith, Knowledge & Community';
   static const String appVersion = '1.0.0';
+  // Deployed web app — used as the link shared by the Invite Friends
+  // sheet (profile screen). Update if the production domain changes.
+  static const String appWebsiteUrl = 'https://communityhub-kappa.vercel.app';
 
   // ── Supabase ──────────────────────────────────────────────
   static const String supabaseUrl = 'https://uxfxrvyamfgnjggjbrkh.supabase.co';

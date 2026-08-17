@@ -14,6 +14,7 @@ import '../../../marketplace/presentation/providers/marketplace_provider.dart';
 import '../../../portfolio/presentation/providers/portfolio_provider.dart';
 import '../../data/profile_detail_repository.dart';
 import '../providers/profile_provider.dart';
+import '../widgets/invite_friends_sheet.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key, this.userId});
@@ -541,7 +542,8 @@ class _ProfileHeader extends StatelessWidget {
                     const SizedBox(width: 8),
                     _ActionBtn(
                       icon: Icons.person_add_outlined,
-                      onTap: () {},
+                      onTap: () => showInviteFriendsSheet(context,
+                          username: username),
                       isIcon: true,
                     ),
                   ],

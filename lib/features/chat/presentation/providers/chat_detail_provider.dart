@@ -89,6 +89,26 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
   }
 
   void _subscribeToMessages() {
+    // Same reasoning as ChatsNotifier._subscribeToNewMessages(): this
+    // runs synchronously right after _load() in the constructor, and
+    // _load() is try/caught so it always resolves isLoading to false
+    // and shows whatever messages it fetched. Realtime setup wasn't
+    // guarded the same way -- if it throws here, it throws out of the
+    // ChatDetailNotifier() constructor and fails the whole provider,
+    // taking down the message list this notifier *already* fetched
+    // along with it. A broken live-update connection should never be
+    // able to do that; the initial history fetch is what actually
+    // matters for the screen to render.
+    try {
+      _subscribeToMessagesInner();
+    } catch (_) {
+      // No live updates for this conversation, but the already-fetched
+      // message history still renders and sending/loading more still
+      // works via plain REST calls.
+    }
+  }
+
+  void _subscribeToMessagesInner() {
     _messageChannel = SupabaseService.client
         .channel('chat_messages_$conversationId')
         .onPostgresChanges(
@@ -164,6 +184,14 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
   }
 
   void _subscribeToTyping() {
+    try {
+      _subscribeToTypingInner();
+    } catch (_) {
+      // Typing indicators just won't show for this conversation.
+    }
+  }
+
+  void _subscribeToTypingInner() {
     _typingChannel = SupabaseService.client
         .channel('typing_$conversationId')
         .onBroadcast(

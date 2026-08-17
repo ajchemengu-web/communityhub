@@ -141,7 +141,12 @@ class ChatRepository {
         .where((m) => m['user_id'] != uid)
         .map((m) {
           final p = Map<String, dynamic>.from(m as Map);
-          final profile = p['profiles'] as Map<String, dynamic>? ?? {};
+          // The query above joins this as `users!user_id(...)`, not
+          // `profiles` -- this was reading the wrong key and silently
+          // getting an empty map every time, which is why a freshly
+          // created direct conversation's other participant always
+          // showed up with no name/photo.
+          final profile = p['users'] as Map<String, dynamic>? ?? {};
           return ParticipantModel(
             userId: p['user_id'] as String,
             fullName: profile['full_name'] as String?,

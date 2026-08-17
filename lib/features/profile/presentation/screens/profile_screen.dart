@@ -9,6 +9,7 @@ import '../../../../core/constants/app_routes.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
 
+import '../../../chat/data/chat_repository.dart';
 import '../../../home/domain/models/post_model.dart';
 import '../../../marketplace/presentation/providers/marketplace_provider.dart';
 import '../../../portfolio/presentation/providers/portfolio_provider.dart';
@@ -40,6 +41,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void dispose() {
     _tabCtrl.dispose();
     super.dispose();
+  }
+
+  // The "Message" button used to just push AppRoutes.chats with a
+  // `?userId=` query param tacked on -- but ChatsScreen (the plain
+  // conversation-list screen) never actually reads that param, so this
+  // silently dropped the user onto their general Messages tab instead of
+  // opening a chat with the person whose profile they were just looking
+  // at. Every other "message this person" entry point in the app (the
+  // shop screen, story viewer, new-message sheet) instead calls
+  // getOrCreateDirectConversation() and pushes straight to
+  // /chat/:conversationId -- this brings the profile screen's Message
+  // button in line with that same, actually-working pattern.
+  Future<void> _messageUser(BuildContext context) async {
+    try {
+      final convo =
+          await ChatRepository.instance.getOrCreateDirectConversation(_uid);
+      if (context.mounted) context.push('/chat/${convo.id}');
+    } catch (e) {
+      debugPrint('ProfileScreen _messageUser failed: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Could not open chat — please try again.')));
+      }
+    }
   }
 
   @override
@@ -120,8 +145,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         Share.share('Check out @$username on CommunityHub!'),
                     onFollow: () =>
                         ref.read(profileProvider(_uid).notifier).toggleFollow(),
-                    onMessage: () =>
-                        context.push('${AppRoutes.chats}?userId=$_uid'),
+                    onMessage: () => _messageUser(context),
                     onPostsTap: () => _tabCtrl.animateTo(0),
                     onFollowersTap: () => context.push('/user/$_uid/followers'),
                     onFollowingTap: () => context.push('/user/$_uid/following'),

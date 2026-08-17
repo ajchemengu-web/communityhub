@@ -14,6 +14,37 @@ import 'features/ads/data/ad_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ── Error fallback ────────────────────────────────────────
+  // Flutter's default ErrorWidget.builder, in a release build (which is
+  // what every real user of the deployed web app is running), renders a
+  // widget whose text is stripped out entirely -- an empty Container with
+  // no background color of its own. Any *build-time* exception anywhere
+  // in the tree (a bad cast on unexpected data, a null field the UI
+  // didn't guard against, etc.) therefore doesn't show an error at all:
+  // it shows nothing, indistinguishable from the screen simply being
+  // blank. That silence is exactly why bugs like this are so hard for
+  // users to describe or for us to diagnose from a screenshot -- there's
+  // no error text, icon, or anything else to go on.
+  //
+  // This doesn't fix whatever throws -- it just makes sure a thrown
+  // exception is never invisible again: it still logs the real error to
+  // the console (visible via browser devtools / `flutter logs`), and
+  // shows a small, layout-safe icon in place of whatever failed to
+  // build, instead of a silent gap.
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    return Container(
+      color: const Color(0xFF11151C),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(8),
+      child: const FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Icon(Icons.error_outline_rounded,
+            color: Colors.white38, size: 28),
+      ),
+    );
+  };
+
   // ── System UI ─────────────────────────────────────────────
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,

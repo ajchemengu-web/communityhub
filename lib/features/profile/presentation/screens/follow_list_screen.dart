@@ -283,6 +283,15 @@ class _FollowListRow extends StatelessWidget {
                   color: Colors.white,
                   fontSize: 14,
                   fontWeight: FontWeight.w500),
+              // maxLines wasn't set here -- TextOverflow.ellipsis only
+              // does anything on the LAST allowed line, and Text's
+              // maxLines defaults to unlimited. Without a line cap the
+              // name just wrapped to fit whatever narrow width this
+              // Flexible was squeezed into (between the avatar and the
+              // Follow button), which on a phone-width screen meant one
+              // or two characters per line, stacked vertically all the
+              // way down -- exactly what showed up in the screenshot.
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -294,7 +303,9 @@ class _FollowListRow extends StatelessWidget {
       ),
       subtitle: username.isNotEmpty
           ? Text('@$username',
-              style: const TextStyle(color: Colors.white54, fontSize: 12))
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis)
           : null,
       trailing: isSelf
           ? null

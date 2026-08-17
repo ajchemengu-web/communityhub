@@ -26,6 +26,7 @@ class _TierPickerScreenState extends State<TierPickerScreen> {
   final _repo = MembershipsRepository.instance;
   List<MembershipTierModel> _tiers = [];
   bool _isLoading = true;
+  String? _loadError;
   String? _subscribingTierId;
 
   @override
@@ -35,13 +36,34 @@ class _TierPickerScreenState extends State<TierPickerScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _isLoading = true);
-    final tiers = await _repo.fetchTiersForCommunity(widget.communityId);
-    if (!mounted) return;
     setState(() {
-      _tiers = tiers;
-      _isLoading = false;
+      _isLoading = true;
+      _loadError = null;
     });
+    // This had no error handling at all before -- if
+    // fetchTiersForCommunity() throws for any reason (the
+    // membership_tiers/membership_subscriptions tables from
+    // 20260704e_memberships_schema.sql were never actually applied to
+    // production, per the note in 84c4004's commit message, so this
+    // throws "relation does not exist" every time right now), the
+    // exception just propagated out of this Future with nothing ever
+    // setting isLoading back to false -- the screen was stuck on its
+    // CircularProgressIndicator forever, with no way out but to leave
+    // the page.
+    try {
+      final tiers = await _repo.fetchTiersForCommunity(widget.communityId);
+      if (!mounted) return;
+      setState(() {
+        _tiers = tiers;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = 'Could not load membership tiers. Please try again.';
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -64,7 +86,25 @@ class _TierPickerScreenState extends State<TierPickerScreen> {
           : null,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _tiers.isEmpty
+          : _loadError != null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline,
+                          color: Colors.white54, size: 40),
+                      const SizedBox(height: 12),
+                      Text(_loadError!,
+                          style: const TextStyle(color: Colors.white54)),
+                      const SizedBox(height: 16),
+                      OutlinedButton(
+                        onPressed: _load,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+              : _tiers.isEmpty
               ? const Center(
                   child: Text('No membership tiers yet',
                       style: TextStyle(color: Colors.white54)),

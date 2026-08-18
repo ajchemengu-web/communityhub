@@ -29,6 +29,18 @@ class YouTubeService {
     String? pageToken,
     String order = 'relevance', // relevance | date | viewCount | rating
     String? videoCategoryId,
+    // short (<4 min) | medium (4-20 min) | long (>20 min). Appending
+    // "university lecture advanced research" keywords to a query does
+    // NOT reliably push out Shorts/meme content -- confirmed live: a
+    // STEM hub query with that keyword bias still surfaced things like
+    // "Periodic Table Song" and "#shorts"-tagged clips ahead of any real
+    // lecture content, because YouTube's relevance ranking is still
+    // fundamentally popularity-driven and doesn't treat trailing keyword
+    // text as a hard filter. videoDuration is an actual API-level
+    // filter, not a ranking hint -- university lectures and research
+    // talks are almost always 'long', while the junk content polluting
+    // STEM hubs is almost always 'short'. See AppConstants.isStemHub.
+    String? videoDuration,
   }) async {
     try {
       final response = await _dio.get('/search', queryParameters: {
@@ -40,6 +52,7 @@ class YouTubeService {
         'safeSearch': 'strict',
         if (pageToken != null) 'pageToken': pageToken,
         if (videoCategoryId != null) 'videoCategoryId': videoCategoryId,
+        if (videoDuration != null) 'videoDuration': videoDuration,
         'key': _apiKey,
       });
 
@@ -114,6 +127,11 @@ class YouTubeService {
       maxResults: maxResults,
       pageToken: pageToken,
       order: 'relevance',
+      // Real API-level filter, not a ranking hint -- see searchVideos'
+      // videoDuration doc comment for why this (not keyword-stuffing
+      // alone) is what actually keeps Shorts/meme content out of STEM
+      // hubs.
+      videoDuration: AppConstants.isStemHub(hubType) ? 'long' : null,
     );
   }
 
@@ -125,7 +143,10 @@ class YouTubeService {
   /// (Science/Engineering and their sub-hubs) specifically — an
   /// academic-depth bias so results skew toward university/graduate/
   /// research material instead of shallow, generic explainer content.
-  /// See [AppConstants.isStemHub] / [AppConstants.academicDepthQuery].
+  /// See [AppConstants.isStemHub] / [AppConstants.academicDepthQuery] —
+  /// and [getHubFeed]'s videoDuration: 'long' for STEM hubs, which is
+  /// what actually enforces this (a real API filter, unlike the keyword
+  /// bias below, which is just relevance-ranking noise on its own).
   String _buildHubQuery(String hubType, List<String> keywords) {
     final core = keywords.take(3).join('|');
     final buffer = StringBuffer(core)

@@ -42,10 +42,41 @@ const HUB_QUERIES: Record<string, string> = {
   history: `history|ancient history|world war ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
   psychology: `psychology|cognitive psychology|behavioral psychology ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
   english: `learn english|english lesson|english grammar ${GENERAL_EXCLUSIONS}`,
+  // These 6 STEM sub-hubs had no dedicated query at all -- they either
+  // showed nothing but stale/empty cache, or fell through to the
+  // client's own live per-user fallback, which is quota-costly and (for
+  // Robotics specifically) meant the sub-hub's cache was never being
+  // warmed by the cron job in the first place. All six mirror their
+  // app_constants.dart keyword list's first 3 entries + the same
+  // academic-depth bias as the other STEM hubs above, so university/
+  // research-level material displaces generic explainer content here
+  // too instead of only in the hubs that happened to already have an
+  // entry.
+  chemistry: `chemistry|organic chemistry|periodic table ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  physics: `physics|quantum mechanics|relativity ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  mathematics: `mathematics|algebra|calculus ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  geography: `geography|physical geography|human geography ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  robotics: `robotics|automation|robot ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
+  aviation: `aviation|aeronautics|pilot ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
 };
 
+// Mirrors AppConstants.stemHubTypes. Confirmed live that ACADEMIC_DEPTH's
+// keyword bias alone does NOT keep Shorts/meme content out (a real
+// backfill still surfaced "Periodic Table Song" and #shorts clips ahead
+// of any lecture content for the chemistry hub) -- YouTube's relevance
+// ranking is fundamentally popularity-driven and doesn't treat trailing
+// query text as a hard filter. videoDuration=long is an actual API-level
+// filter: university lectures/research talks are almost always >20min,
+// while the junk polluting these hubs is almost always Shorts/clips.
+const STEM_HUBS = new Set([
+  "science", "biology", "chemistry", "physics", "mathematics",
+  "psychology", "geography", "history",
+  "engineering", "robotics", "aviation", "computer_science",
+]);
+
 async function searchHub(hubType: string, query: string) {
-  const url = `${YT_BASE}/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=50&order=relevance&safeSearch=strict&key=${YOUTUBE_API_KEY}`;
+  const durationParam = STEM_HUBS.has(hubType) ? "&videoDuration=long" : "";
+  const url = `${YT_BASE}/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=50&order=relevance&safeSearch=strict${durationParam}&key=${YOUTUBE_API_KEY}`;
   const res = await fetch(url);
   if (!res.ok) {
     const body = await res.text();
@@ -71,6 +102,21 @@ Deno.serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Scheduled cron invocations send no body (or an empty one), which
+  // covers every hub -- `hubs` is only ever passed explicitly for a
+  // deliberate one-off backfill of specific hubs (e.g. warming a newly
+  // added hub's cache without re-spending quota on the other ones that
+  // are already populated).
+  let hubFilter: string[] | null = null;
+  try {
+    const body = await req.json();
+    if (Array.isArray(body?.hubs) && body.hubs.length > 0) {
+      hubFilter = body.hubs;
+    }
+  } catch {
+    // no/invalid JSON body -- keep default (all hubs)
+  }
+
   const db = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -79,7 +125,11 @@ Deno.serve(async (req: Request) => {
   const results: Record<string, number | string> = {};
   let totalUpserted = 0;
 
-  for (const [hubType, query] of Object.entries(HUB_QUERIES)) {
+  const hubEntries = hubFilter
+    ? Object.entries(HUB_QUERIES).filter(([hubType]) => hubFilter!.includes(hubType))
+    : Object.entries(HUB_QUERIES);
+
+  for (const [hubType, query] of hubEntries) {
     try {
       const items = await searchHub(hubType, query);
       const videoIds = items

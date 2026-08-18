@@ -31,21 +31,6 @@ class ReciterModel {
 /// Arabic audio from mp3quran.net, which only publishes whole-surah
 /// files — fine for "play the whole surah" but unable to support
 /// verse-by-verse playback, which is what this screen needs.
-///
-/// There is no human-recorded Kiswahili translation *audio* per verse
-/// published anywhere (confirmed) — only whole-surah narrations exist,
-/// from the Internet Archive / VideoQuran.net. This used to also offer a
-/// per-verse mode that read the translation aloud via on-device
-/// text-to-speech, interleaved right after each Arabic verse. That was
-/// removed: a synthesized voice reading scripture doesn't sound right to
-/// many listeners — several described it as uncomfortably robotic and
-/// mispronounced, and for East African Kiswahili speakers in particular
-/// it read as clearly artificial rather than a respectful recitation.
-/// The human-recorded VideoQuran.net track is the only Kiswahili option
-/// now: it plays once, after all the Arabic verses finish (no per-verse
-/// timestamps exist in that recording, so it can't be interleaved
-/// per-verse the way the removed TTS mode was). See quran_screen.dart's
-/// `_playFullNarration`.
 class QuranAudioRepository {
   QuranAudioRepository._() {
     _dio = Dio(BaseOptions(
@@ -62,29 +47,22 @@ class QuranAudioRepository {
   static const String _audioCdnBase =
       'https://cdn.islamic.network/quran/audio';
 
-  static const String _swahiliTranslationBase =
-      'https://archive.org/download/'
-      'TranslationOfTheMeaningsOfTheNobleQuranInSwahilikiswahilimp3';
-
   /// Web-only. `audioplayers`' web backend sets `crossOrigin="anonymous"`
   /// on every `<audio>` element it creates — unconditionally, with no
   /// public option to turn it off (see bluefireteam/audioplayers's
   /// wrapped_player.dart; it's there to support stereo-panning). That
   /// makes the browser require an `Access-Control-Allow-Origin` header
-  /// on the audio response, which neither cdn.islamic.network nor
-  /// archive.org send. This is exactly what broke Quran playback on the
-  /// web build: the browser console showed "Access to audio ... has been
-  /// blocked by CORS policy" for the Arabic CDN, and the Kiswahili
-  /// narration would have hit the identical wall the first time anyone
-  /// played a surah through to the end, since it comes from a different
-  /// host with the same missing header. Both play back fine as a plain
-  /// browser navigation, and on mobile there's no CORS concept at all —
-  /// this only bites the web build specifically.
+  /// on the audio response, which cdn.islamic.network doesn't send. This
+  /// is exactly what broke Quran playback on the web build: the browser
+  /// console showed "Access to audio ... has been blocked by CORS
+  /// policy". Plays back fine as a plain browser navigation, and on
+  /// mobile there's no CORS concept at all — this only bites the web
+  /// build specifically.
   ///
   /// Routes web playback through a Supabase Edge Function
   /// (quran-audio-proxy) that fetches the same bytes server-side and
   /// relays them with CORS headers attached. Mobile keeps hitting the
-  /// CDNs directly — no reason to add a network hop where it isn't
+  /// CDN directly — no reason to add a network hop where it isn't
   /// needed.
   static const String _webProxyBase =
       '${AppConstants.supabaseUrl}/functions/v1/quran-audio-proxy';
@@ -92,13 +70,6 @@ class QuranAudioRepository {
   static const String arabicRecitationAttribution =
       'Arabic recitation audio courtesy of alquran.cloud / '
       'cdn.islamic.network.';
-
-  /// Attribution required by the full-narration Kiswahili audio's
-  /// Creative Commons "Attribution-NonCommercial-NoDerivatives" license.
-  /// Shown whenever that track plays.
-  static const String swahiliTranslationLicenseNote =
-      'Kiswahili full narration: VideoQuran.net, via the Internet '
-      'Archive — CC BY-NC-ND 3.0. Streamed, not redistributed.';
 
   /// Small curated set of reciters with confirmed per-ayah audio, used
   /// until (or unless) [fetchReciters] can reach the live directory.
@@ -160,28 +131,13 @@ class QuranAudioRepository {
     return '$_audioCdnBase/$bitrate/${reciter.id}/$globalAyahNumber.mp3';
   }
 
-  /// The whole-surah, human-narrated Kiswahili translation track (see
-  /// class doc) — used by "full narration" mode.
-  String swahiliTranslationAudioUrl(int surahNumber) {
-    if (kIsWeb) {
-      return Uri.parse(_webProxyBase).replace(queryParameters: {
-        'type': 'kiswahili',
-        'surah': '$surahNumber',
-        'apikey': AppConstants.supabaseAnonKey,
-      }).toString();
-    }
-    final padded = surahNumber.toString().padLeft(3, '0');
-    return '$_swahiliTranslationBase/'
-        '${padded}VideoQuran.Net-Swahili-Kiswahili-Translation.mp3';
-  }
-
   // ── Web playback sources ──────────────────────────────────
   //
   // A plain `<audio>` element (what `UrlSource` becomes under the hood
   // on Flutter web) has no way to attach a custom header to the
   // request it makes -- that's a browser limitation on media elements,
-  // not something audioplayers or this app controls. The proxy URLs
-  // above work around the *CORS* problem by putting the Supabase
+  // not something audioplayers or this app controls. The proxy URL
+  // above works around the *CORS* problem by putting the Supabase
   // anon key in the `?apikey=` query string instead of a header. That
   // used to be enough, but this project's Supabase gateway (confirmed
   // directly via the Edge Functions dashboard's "Test" tool: the same
@@ -191,9 +147,8 @@ class QuranAudioRepository {
   // So on web, fetch the audio bytes ourselves with dio (which *can*
   // set a header) and hand the player an in-memory [BytesSource]
   // instead of a URL at all. Native platforms never went through the
-  // proxy in the first place (see arabicAyahAudioUrl/
-  // swahiliTranslationAudioUrl above) and keep using [UrlSource]
-  // unchanged.
+  // proxy in the first place (see arabicAyahAudioUrl above) and keep
+  // using [UrlSource] unchanged.
 
   /// Resolves [arabicAyahAudioUrl] into a ready-to-play [Source].
   Future<Source> arabicAyahAudioSource(
@@ -201,13 +156,6 @@ class QuranAudioRepository {
       {int bitrate = 128}) async {
     final url =
         arabicAyahAudioUrl(reciter, globalAyahNumber, bitrate: bitrate);
-    if (!kIsWeb) return UrlSource(url);
-    return BytesSource(await _fetchProxiedBytes(url));
-  }
-
-  /// Resolves [swahiliTranslationAudioUrl] into a ready-to-play [Source].
-  Future<Source> swahiliTranslationAudioSource(int surahNumber) async {
-    final url = swahiliTranslationAudioUrl(surahNumber);
     if (!kIsWeb) return UrlSource(url);
     return BytesSource(await _fetchProxiedBytes(url));
   }

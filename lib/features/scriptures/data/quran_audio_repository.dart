@@ -1,18 +1,16 @@
+import 'dart:io';
 import 'dart:typed_data' show Uint8List;
 
-import 'package:audioplayers/audioplayers.dart' show Source, UrlSource, BytesSource;
+import 'package:audioplayers/audioplayers.dart'
+    show Source, BytesSource, DeviceFileSource;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:path_provider/path_provider.dart';
 
 import '../../../core/constants/app_constants.dart';
 
 /// Metadata for a Quran reciter, sourced from alquran.cloud's audio
-/// edition directory (https://alquran.cloud/api) — the same provider
-/// this feature already uses for per-ayah Arabic/English/Kiswahili text
-/// (see quran_screen.dart's `_fetch()`). Using one provider for both
-/// text and audio means every reciter here is guaranteed to expose true
-/// per-ayah (verse-by-verse) audio files, not just whole-surah files —
-/// required for the verse-by-verse playback this screen does.
+/// edition directory (https://alquran.cloud/api).
 class ReciterModel {
   const ReciterModel({required this.id, required this.name});
 
@@ -23,14 +21,13 @@ class ReciterModel {
   final String name;
 }
 
-/// Resolves Quran audio for the Scriptures screen.
-///
-/// Arabic recitation is per-ayah (per-verse), streamed directly from
-/// alquran.cloud's audio CDN (cdn.islamic.network) using the reciter's
-/// "versebyverse" edition identifier. This app previously sourced
-/// Arabic audio from mp3quran.net, which only publishes whole-surah
-/// files — fine for "play the whole surah" but unable to support
-/// verse-by-verse playback, which is what this screen needs.
+/// Resolves Quran audio for the Scriptures screen — a single continuous
+/// whole-surah recitation (see [surahAudioUrl]/[surahAudioSource]) rather
+/// than per-verse clips. Per-verse playback was removed along with the
+/// Kiswahili full-narration feature it was built alongside; with no
+/// Kiswahili audio to interleave, chaining individually-fetched verse
+/// clips just added network-hop gaps between verses for no benefit over
+/// one continuous file.
 class QuranAudioRepository {
   QuranAudioRepository._() {
     _dio = Dio(BaseOptions(
@@ -44,8 +41,8 @@ class QuranAudioRepository {
 
   late final Dio _dio;
 
-  static const String _audioCdnBase =
-      'https://cdn.islamic.network/quran/audio';
+  static const String _surahAudioCdnBase =
+      'https://cdn.islamic.network/quran/audio-surah';
 
   /// Web-only. `audioplayers`' web backend sets `crossOrigin="anonymous"`
   /// on every `<audio>` element it creates — unconditionally, with no
@@ -71,27 +68,26 @@ class QuranAudioRepository {
       'Arabic recitation audio courtesy of alquran.cloud / '
       'cdn.islamic.network.';
 
-  /// Small curated set of reciters with confirmed per-ayah audio, used
-  /// until (or unless) [fetchReciters] can reach the live directory.
-  /// These three match the app's previous curated list (Alafasy,
-  /// Husary, Al-Akhdar) so switching audio providers is invisible to
-  /// anyone who already picked one of them.
+  /// Small curated set of reciters with confirmed whole-surah audio,
+  /// used until (or unless) [fetchReciters] can reach the live
+  /// directory. These three match the app's previous curated list
+  /// (Alafasy, Husary, Al-Akhdar) so switching audio providers is
+  /// invisible to anyone who already picked one of them.
   static const List<ReciterModel> fallbackReciters = [
     ReciterModel(id: 'ar.alafasy', name: 'Mishary Alafasy'),
     ReciterModel(id: 'ar.husary', name: 'Mahmoud Khalil Al-Hussary'),
     ReciterModel(id: 'ar.ibrahimakhbar', name: 'Ibrahim Al-Akhdar'),
   ];
 
-  /// Fetches the full per-ayah reciter directory from alquran.cloud.
-  /// Falls back to [fallbackReciters] on any network/parse error, or if
-  /// the response shape ever changes — the player should never be left
-  /// with zero reciters to choose from.
+  /// Fetches the full reciter directory from alquran.cloud. Falls back
+  /// to [fallbackReciters] on any network/parse error, or if the
+  /// response shape ever changes — the player should never be left with
+  /// zero reciters to choose from.
   Future<List<ReciterModel>> fetchReciters() async {
     try {
       final response = await _dio.get('/edition', queryParameters: {
         'format': 'audio',
         'language': 'ar',
-        'type': 'versebyverse',
       });
       final raw = response.data['data'] as List<dynamic>? ?? [];
 
@@ -112,52 +108,57 @@ class QuranAudioRepository {
     }
   }
 
-  /// Builds the per-ayah recitation URL for [reciter] and a
-  /// QURAN-WIDE ayah number (1..6236 — NOT the in-surah verse number).
-  /// See the 'globalNumber' field populated in quran_screen.dart's
-  /// `_fetch()`, taken from alquran.cloud's ayah `number` field (as
-  /// opposed to `numberInSurah`).
-  String arabicAyahAudioUrl(ReciterModel reciter, int globalAyahNumber,
+  /// Builds the whole-surah recitation URL for [reciter].
+  String surahAudioUrl(ReciterModel reciter, int surahNumber,
       {int bitrate = 128}) {
     if (kIsWeb) {
       return Uri.parse(_webProxyBase).replace(queryParameters: {
-        'type': 'arabic',
+        'type': 'full_surah',
         'bitrate': '$bitrate',
         'reciter': reciter.id,
-        'ayah': '$globalAyahNumber',
+        'surah': '$surahNumber',
         'apikey': AppConstants.supabaseAnonKey,
       }).toString();
     }
-    return '$_audioCdnBase/$bitrate/${reciter.id}/$globalAyahNumber.mp3';
+    return '$_surahAudioCdnBase/$bitrate/${reciter.id}/$surahNumber.mp3';
   }
 
-  // ── Web playback sources ──────────────────────────────────
-  //
-  // A plain `<audio>` element (what `UrlSource` becomes under the hood
-  // on Flutter web) has no way to attach a custom header to the
-  // request it makes -- that's a browser limitation on media elements,
-  // not something audioplayers or this app controls. The proxy URL
-  // above works around the *CORS* problem by putting the Supabase
-  // anon key in the `?apikey=` query string instead of a header. That
-  // used to be enough, but this project's Supabase gateway (confirmed
-  // directly via the Edge Functions dashboard's "Test" tool: the same
-  // key as a query param gets 401 "Invalid credentials", the identical
-  // key as a header gets 200) only honors `apikey` when it's a header.
-  //
-  // So on web, fetch the audio bytes ourselves with dio (which *can*
-  // set a header) and hand the player an in-memory [BytesSource]
-  // instead of a URL at all. Native platforms never went through the
-  // proxy in the first place (see arabicAyahAudioUrl above) and keep
-  // using [UrlSource] unchanged.
-
-  /// Resolves [arabicAyahAudioUrl] into a ready-to-play [Source].
-  Future<Source> arabicAyahAudioSource(
-      ReciterModel reciter, int globalAyahNumber,
+  /// Resolves [surahAudioUrl] into a ready-to-play [Source].
+  ///
+  /// Web: a plain `<audio>` element has no way to attach a custom
+  /// header, so this fetches the bytes itself via dio (which can) and
+  /// hands the player an in-memory [BytesSource] — see the class-level
+  /// comment on why a query-string apikey alone isn't enough against
+  /// this project's Supabase gateway.
+  ///
+  /// Mobile: whole-surah files are large enough (tens of MB for longer
+  /// surahs) that Android's native MediaPlayer HTTP streamer hits a
+  /// mid-stream ProtocolException on this CDN and never starts playback
+  /// (confirmed live: NuCachedSource2 error -1010 -> MEDIA_ERROR_UNKNOWN)
+  /// — the same file streams fine as a plain browser download, so it's
+  /// specifically the native streaming path that chokes on it. Per-verse
+  /// clips never hit this because they're small enough to finish before
+  /// it triggers. Downloading first and playing the local file sidesteps
+  /// it entirely; the download is cached by surah+reciter so replaying
+  /// or switching back to an already-fetched combination is instant.
+  Future<Source> surahAudioSource(ReciterModel reciter, int surahNumber,
       {int bitrate = 128}) async {
-    final url =
-        arabicAyahAudioUrl(reciter, globalAyahNumber, bitrate: bitrate);
-    if (!kIsWeb) return UrlSource(url);
-    return BytesSource(await _fetchProxiedBytes(url));
+    final url = surahAudioUrl(reciter, surahNumber, bitrate: bitrate);
+    if (kIsWeb) return BytesSource(await _fetchProxiedBytes(url));
+
+    final dir = await getTemporaryDirectory();
+    final file =
+        File('${dir.path}/quran_surah_${reciter.id}_$surahNumber.mp3');
+    if (await file.exists() && await file.length() > 0) {
+      return DeviceFileSource(file.path);
+    }
+    try {
+      await Dio().download(url, file.path);
+    } catch (e) {
+      if (await file.exists()) await file.delete();
+      rethrow;
+    }
+    return DeviceFileSource(file.path);
   }
 
   Future<Uint8List> _fetchProxiedBytes(String url) async {

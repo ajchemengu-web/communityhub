@@ -194,32 +194,27 @@ class _SurahDetailScreen extends StatefulWidget {
 }
 
 class _SurahDetailScreenState extends State<_SurahDetailScreen> {
-  // Each entry: { number, globalNumber, arabic, translation, swahili }
-  // — number is the in-surah verse number, globalNumber is the
-  // Quran-wide 1..6236 number the per-ayah audio CDN indexes by.
+  // Each entry: { number, arabic, translation, swahili } — number is
+  // the in-surah verse number. Still fetched and displayed for reading
+  // along with the audio; only the per-verse AUDIO was removed.
   List<Map<String, String>> _ayahs = [];
   bool _loading = true;
   String? _error;
 
-  // --- Audio: verse-by-verse Arabic recitation, auto-advancing straight
-  // through the whole surah. ---
+  // --- Audio: single continuous whole-surah recitation. ---
   final _player = AudioPlayer();
   List<ReciterModel> _reciters = QuranAudioRepository.fallbackReciters;
   ReciterModel _reciter = QuranAudioRepository.fallbackReciters.first;
-  int? _ayahIndex; // index into _ayahs of the verse currently loaded
-  bool _sequential = true; // auto-advance verse -> verse
+  bool _isPlayerActive = false; // a surah is loaded (playing or paused)
   PlayerState _playerState = PlayerState.stopped;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   bool _audioBusy = false;
   String? _audioError;
 
-  // True whenever the bottom player bar should be shown.
-  bool get _isPlayerActive => _ayahIndex != null;
-
-  // Bumped on every stop/new-play/reciter-change; callbacks (TTS
-  // completion, the timeout safety net) compare against this to ignore
-  // stale events from a sequence step the user has since moved past.
+  // Bumped on every stop/new-play/reciter-change; callbacks compare
+  // against this to ignore stale events from a request the user has
+  // since moved past.
   int _playToken = 0;
 
   @override
@@ -227,15 +222,6 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
     super.initState();
     _fetch();
     _loadReciters();
-
-    // Keep the native player "warm" between verses instead of fully
-    // tearing it down on completion (the default ReleaseMode.release).
-    // Releasing and immediately re-playing a new source back-to-back —
-    // exactly what auto-advancing verse-to-verse does — races the
-    // platform player's teardown and throws, which otherwise surfaces as
-    // a spurious "check your internet connection" error even though the
-    // network is fine.
-    _player.setReleaseMode(ReleaseMode.stop);
 
     _player.onPlayerStateChanged.listen((state) {
       if (!mounted) return;
@@ -251,25 +237,10 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
     });
     _player.onPlayerComplete.listen((_) {
       if (!mounted) return;
-      if (_ayahIndex == null) return;
-      if (!_sequential) {
-        setState(() {
-          _ayahIndex = null;
-          _position = Duration.zero;
-        });
-        return;
-      }
-      // Keep chaining through the Arabic verses; stop once the last one
-      // finishes.
-      final next = _ayahIndex! + 1;
-      if (next < _ayahs.length) {
-        _playAyah(next);
-      } else {
-        setState(() {
-          _ayahIndex = null;
-          _position = Duration.zero;
-        });
-      }
+      setState(() {
+        _isPlayerActive = false;
+        _position = Duration.zero;
+      });
     });
   }
 
@@ -304,10 +275,6 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
       final ayahs = List.generate(arabicAyahs.length, (i) {
         return {
           'number': '${arabicAyahs[i]['numberInSurah']}',
-          // Quran-wide ayah number (1..6236, as opposed to the in-surah
-          // 'numberInSurah' above) — the per-ayah audio CDN indexes by
-          // this. See QuranAudioRepository.arabicAyahAudioUrl.
-          'globalNumber': '${arabicAyahs[i]['number']}',
           'arabic': arabicAyahs[i]['text'] as String? ?? '',
           'translation': engAyahs[i]['text'] as String? ?? '',
           'swahili':
@@ -323,25 +290,17 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
     }
   }
 
-  /// Plays the Arabic recitation for verse [index]. On completion (see
-  /// the onPlayerComplete listener in initState), if [_sequential] is
-  /// on, this automatically chains into verse [index] + 1's Arabic,
-  /// stopping once the surah's last verse finishes.
-  Future<void> _playAyah(int index) async {
+  /// Plays the whole surah as one continuous track.
+  Future<void> _playFullSurah() async {
     final token = ++_playToken;
-    final ayah = _ayahs[index];
-    final globalNumber = int.tryParse(ayah['globalNumber'] ?? '') ?? 0;
     setState(() {
-      _ayahIndex = index;
+      _isPlayerActive = true;
       _audioBusy = true;
       _audioError = null;
       _position = Duration.zero;
       _duration = Duration.zero;
     });
     try {
-      // Defensively stop anything in-flight before starting the next
-      // clip — switching sources on a still-settling player is what
-      // triggers the auto-chain failure described below.
       try {
         await _player.stop();
       } catch (_) {
@@ -350,7 +309,7 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
       if (token != _playToken) return; // superseded while stopping
       try {
         final source = await QuranAudioRepository.instance
-            .arabicAyahAudioSource(_reciter, globalNumber);
+            .surahAudioSource(_reciter, widget.surah.number);
         if (token != _playToken) return;
         await _player.play(source);
       } catch (e) {
@@ -359,19 +318,20 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
         // transient hiccups into successful playback instead of an
         // error the user has to manually retry themselves.
         debugPrint(
-            'Quran audio playback error, retrying once (verse $index, surah ${widget.surah.number}): $e');
+            'Quran audio playback error, retrying once (surah ${widget.surah.number}): $e');
         await Future.delayed(const Duration(milliseconds: 600));
         if (token != _playToken) return;
         final source = await QuranAudioRepository.instance
-            .arabicAyahAudioSource(_reciter, globalNumber);
+            .surahAudioSource(_reciter, widget.surah.number);
         if (token != _playToken) return;
         await _player.play(source);
       }
     } catch (e) {
       debugPrint(
-          'Quran audio playback error (verse $index, surah ${widget.surah.number}): $e');
+          'Quran audio playback error (surah ${widget.surah.number}): $e');
       if (!mounted || token != _playToken) return;
       setState(() {
+        _isPlayerActive = false;
         _audioError = 'Could not play audio. Check your internet connection.';
       });
     } finally {
@@ -381,7 +341,7 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
 
   Future<void> _togglePlayPause() async {
     if (!_isPlayerActive) {
-      await _playAyah(0);
+      await _playFullSurah();
       return;
     }
     if (_playerState == PlayerState.playing) {
@@ -396,7 +356,7 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
     await _player.stop();
     if (!mounted) return;
     setState(() {
-      _ayahIndex = null;
+      _isPlayerActive = false;
       _position = Duration.zero;
     });
   }
@@ -426,10 +386,10 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                     : null,
                 onTap: () {
                   Navigator.pop(context);
-                  final idx = _ayahIndex;
+                  final wasActive = _isPlayerActive;
                   setState(() => _reciter = r);
-                  if (idx != null) {
-                    _playAyah(idx);
+                  if (wasActive) {
+                    _playFullSurah();
                   }
                 },
               );
@@ -452,8 +412,7 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
     super.dispose();
   }
 
-  /// Single entry point: starts verse 1's Arabic recitation and chains
-  /// straight through every verse in the surah.
+  /// Single entry point: plays the whole surah as one continuous track.
   Widget _buildAudioQuickActions() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -461,9 +420,9 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
         children: [
           Expanded(
             child: ElevatedButton.icon(
-              onPressed: () => _playAyah(0),
+              onPressed: _playFullSurah,
               icon: const Icon(Icons.play_arrow_rounded, size: 22),
-              label: const Text('Play Recitation'),
+              label: const Text('Play Full Surah'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF4CAF50),
                 foregroundColor: Colors.white,
@@ -485,10 +444,7 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
   }
 
   Widget _buildAudioPlayerBar() {
-    final verseNo = _ayahIndex != null ? _ayahs[_ayahIndex!]['number'] : null;
-    final label = _ayahIndex == null
-        ? ''
-        : '${_reciter.name} · Verse $verseNo · Recitation';
+    final label = '${_reciter.name} · Full recitation';
     final totalMs = _duration.inMilliseconds > 0 ? _duration.inMilliseconds : 1;
     final posMs = _position.inMilliseconds.clamp(0, totalMs);
 
@@ -543,14 +499,6 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
-                  onPressed: (_ayahIndex != null && _ayahIndex! > 0)
-                      ? () => _playAyah(_ayahIndex! - 1)
-                      : null,
-                  icon: const Icon(Icons.skip_previous_rounded,
-                      color: Colors.white38),
-                  tooltip: 'Previous verse',
-                ),
-                IconButton(
                   iconSize: 40,
                   onPressed: _audioBusy ? null : _togglePlayPause,
                   icon: _audioBusy
@@ -566,28 +514,20 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
                               : Icons.play_circle_filled,
                           color: const Color(0xFF4CAF50)),
                 ),
+                const SizedBox(width: 12),
                 IconButton(
                   onPressed: _stopAudio,
                   icon: const Icon(Icons.stop_circle_outlined,
                       color: Colors.white38),
                   tooltip: 'Stop',
                 ),
-                IconButton(
-                  onPressed: (_ayahIndex != null &&
-                          _ayahIndex! < _ayahs.length - 1)
-                      ? () => _playAyah(_ayahIndex! + 1)
-                      : null,
-                  icon: const Icon(Icons.skip_next_rounded,
-                      color: Colors.white38),
-                  tooltip: 'Next verse',
-                ),
               ],
             ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 6),
               child: Text(
                 QuranAudioRepository.arabicRecitationAttribution,
-                style: const TextStyle(color: Colors.white24, fontSize: 9),
+                style: TextStyle(color: Colors.white24, fontSize: 9),
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,

@@ -18,9 +18,10 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, range",
 };
 
-const AUDIO_CDN = "https://cdn.islamic.network/quran/audio";
-const SWAHILI_BASE =
-  "https://archive.org/download/TranslationOfTheMeaningsOfTheNobleQuranInSwahilikiswahilimp3";
+// Per-verse ("arabic") and Kiswahili full-narration audio proxying were
+// removed along with per-verse playback and the Kiswahili feature in the
+// app -- this now only ever proxies whole-surah recitation audio.
+const AUDIO_SURAH_CDN = "https://cdn.islamic.network/quran/audio-surah";
 
 const RECITER_PATTERN = /^[a-z0-9.]+$/i;
 const DIGITS_PATTERN = /^\d+$/;
@@ -39,30 +40,20 @@ Deno.serve(async (req: Request) => {
 
   let upstreamUrl: string;
 
-  if (type === "arabic") {
+  if (type === "full_surah") {
     const bitrate = url.searchParams.get("bitrate") ?? "128";
     const reciter = url.searchParams.get("reciter") ?? "";
-    const ayah = url.searchParams.get("ayah") ?? "";
+    const surah = url.searchParams.get("surah") ?? "";
 
     if (
       !DIGITS_PATTERN.test(bitrate) ||
       !RECITER_PATTERN.test(reciter) ||
-      !DIGITS_PATTERN.test(ayah)
+      !DIGITS_PATTERN.test(surah)
     ) {
-      return badRequest("Invalid arabic audio parameters");
+      return badRequest("Invalid full_surah audio parameters");
     }
 
-    upstreamUrl = `${AUDIO_CDN}/${bitrate}/${reciter}/${ayah}.mp3`;
-  } else if (type === "kiswahili") {
-    const surah = url.searchParams.get("surah") ?? "";
-
-    if (!DIGITS_PATTERN.test(surah)) {
-      return badRequest("Invalid kiswahili audio parameters");
-    }
-
-    const padded = surah.padStart(3, "0");
-    upstreamUrl =
-      `${SWAHILI_BASE}/${padded}VideoQuran.Net-Swahili-Kiswahili-Translation.mp3`;
+    upstreamUrl = `${AUDIO_SURAH_CDN}/${bitrate}/${reciter}/${surah}.mp3`;
   } else {
     return badRequest("Unknown or missing 'type' parameter");
   }

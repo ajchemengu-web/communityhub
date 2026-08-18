@@ -19,7 +19,6 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isLoading = false;
-  bool _showEmailForm = false;
   bool _showPhoneForm = false;
 
   final _formKey = GlobalKey<FormState>();
@@ -179,15 +178,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       .slideY(begin: 0.3, end: 0, duration: 400.ms)
                       .fadeIn(),
 
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 40),
 
-                  // ── Google ────────────────────────────────
-                  _GoogleSignInButton(
-                    isLoading: _isLoading && !_showEmailForm,
-                    onPressed: _signInWithGoogle,
+                  // ── Username/email + password (primary) ────
+                  // The main sign-in method: always visible, no tap
+                  // needed to reveal it. Google/Phone are secondary,
+                  // lower-emphasis options below.
+                  _EmailForm(
+                    formKey: _formKey,
+                    identifierCtrl: _identifierCtrl,
+                    passwordCtrl: _passwordCtrl,
+                    obscurePassword: _obscurePassword,
+                    isLoading: _isLoading,
+                    onTogglePassword: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
+                    onSubmit: _signInWithCredentials,
+                    onRegister: () => context.push(AppRoutes.register),
                   ).animate(delay: 300.ms).fadeIn(),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
 
                   // ── Divider ───────────────────────────────
                   Row(
@@ -196,7 +205,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           child: Divider(color: Colors.white24, thickness: 0.5)),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text('or',
+                        child: Text('or continue with',
                             style: AppTextStyles.labelMedium
                                 .copyWith(color: Colors.white38)),
                       ),
@@ -207,49 +216,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                   const SizedBox(height: 16),
 
-                  // ── Phone form or button ──────────────────
-                  if (!_showEmailForm)
-                    AnimatedCrossFade(
-                      duration: const Duration(milliseconds: 300),
-                      crossFadeState: _showPhoneForm
-                          ? CrossFadeState.showSecond
-                          : CrossFadeState.showFirst,
-                      firstChild: _ContinueWithPhoneButton(
-                        onPressed: () =>
-                            setState(() => _showPhoneForm = true),
+                  // ── Google + Phone (secondary) ─────────────
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _GoogleSignInButton(
+                          isLoading: _isLoading,
+                          onPressed: _signInWithGoogle,
+                        ),
                       ),
-                      secondChild: _PhoneForm(
-                        phoneCtrl: _phoneCtrl,
-                        isLoading: _isLoading,
-                        onSubmit: _sendPhoneOtp,
-                        onBack: () => setState(() => _showPhoneForm = false),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _ContinueWithPhoneButton(
+                          onPressed: () =>
+                              setState(() => _showPhoneForm = true),
+                        ),
                       ),
-                    ).animate(delay: 430.ms).fadeIn(),
+                    ],
+                  ).animate(delay: 430.ms).fadeIn(),
 
-                  if (!_showPhoneForm) ...[
-                    const SizedBox(height: 12),
-                    // ── Email form or button ──────────────────
-                    AnimatedCrossFade(
-                      duration: const Duration(milliseconds: 300),
-                      crossFadeState: _showEmailForm
-                          ? CrossFadeState.showSecond
-                          : CrossFadeState.showFirst,
-                      firstChild: _ContinueWithEmailButton(
-                        onPressed: () =>
-                            setState(() => _showEmailForm = true),
-                      ),
-                      secondChild: _EmailForm(
-                        formKey: _formKey,
-                        identifierCtrl: _identifierCtrl,
-                        passwordCtrl: _passwordCtrl,
-                        obscurePassword: _obscurePassword,
-                        isLoading: _isLoading,
-                        onTogglePassword: () => setState(
-                            () => _obscurePassword = !_obscurePassword),
-                        onSubmit: _signInWithCredentials,
-                        onRegister: () => context.push(AppRoutes.register),
-                      ),
-                    ).animate(delay: 450.ms).fadeIn(),
+                  if (_showPhoneForm) ...[
+                    const SizedBox(height: 16),
+                    _PhoneForm(
+                      phoneCtrl: _phoneCtrl,
+                      isLoading: _isLoading,
+                      onSubmit: _sendPhoneOtp,
+                      onBack: () => setState(() => _showPhoneForm = false),
+                    ).animate().fadeIn(),
                   ],
 
                   const SizedBox(height: 32),
@@ -300,15 +293,15 @@ class _ContinueWithPhoneButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
       onPressed: onPressed,
-      icon: const Icon(Icons.phone_outlined, color: Colors.white70, size: 20),
+      icon: const Icon(Icons.phone_outlined, color: Colors.white70, size: 18),
       label: Text(
-        'Continue with Phone',
+        'Phone',
         style: AppTextStyles.buttonText.copyWith(color: Colors.white),
       ),
       style: OutlinedButton.styleFrom(
         foregroundColor: Colors.white,
         side: const BorderSide(color: Colors.white38),
-        minimumSize: const Size(double.infinity, 54),
+        minimumSize: const Size(double.infinity, 50),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
@@ -405,28 +398,6 @@ class _PhoneForm extends StatelessWidget {
                 style: TextStyle(color: Colors.white38, fontSize: 13)),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ContinueWithEmailButton extends StatelessWidget {
-  const _ContinueWithEmailButton({required this.onPressed});
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.white,
-        side: const BorderSide(color: Colors.white38),
-        minimumSize: const Size(double.infinity, 54),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      ),
-      child: Text(
-        'Continue with Email / Username',
-        style: AppTextStyles.buttonText.copyWith(color: Colors.white),
       ),
     );
   }
@@ -591,6 +562,10 @@ class _EmailForm extends StatelessWidget {
   }
 }
 
+/// Secondary-tier sign-in option, styled to match [_ContinueWithPhoneButton]
+/// (same outline, height, corner radius) so Google reads as one of two
+/// equally-weighted alternatives to the primary username/password form
+/// above it — not the dominant call to action.
 class _GoogleSignInButton extends StatelessWidget {
   const _GoogleSignInButton({
     required this.isLoading,
@@ -602,64 +577,51 @@ class _GoogleSignInButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: isLoading ? null : onPressed,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        height: 54,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (isLoading)
-              const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: AppColors.primary,
-                ),
-              )
-            else ...[
-              Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4285F4),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Center(
-                  child: Text(
-                    'G',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+    return OutlinedButton(
+      onPressed: isLoading ? null : onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: const BorderSide(color: Colors.white38),
+        minimumSize: const Size(double.infinity, 50),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      child: isLoading
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: Colors.white,
+              ),
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'G',
+                      style: TextStyle(
+                        color: Color(0xFF4285F4),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Continue with Google',
-                style: AppTextStyles.buttonText.copyWith(
-                  color: const Color(0xFF3C4043),
+                const SizedBox(width: 8),
+                Text(
+                  'Google',
+                  style: AppTextStyles.buttonText.copyWith(color: Colors.white),
                 ),
-              ),
-            ],
-          ],
-        ),
-      ),
+              ],
+            ),
     );
   }
 }

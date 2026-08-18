@@ -60,11 +60,37 @@ Future<void> main() async {
   ]);
 
   // ── Supabase ──────────────────────────────────────────────
+  // Awaited: routing depends on auth state being available before the
+  // first frame, and this call itself is local SDK/storage setup with
+  // no network round-trip, so it doesn't meaningfully delay startup.
   await SupabaseService.initialize();
 
+  // ── YouTube ───────────────────────────────────────────────
+  YouTubeService.instance.setApiKey(AppConstants.youtubeApiKey);
+
+  // ── Run App ───────────────────────────────────────────────
+  // Stripe/AdMob/push-notification setup used to be awaited here, one
+  // after another, before runApp() ever ran -- meaning the entire app
+  // sat on a blank/splash screen until all three finished, including
+  // waiting on the Android 13+ notification permission dialog. None of
+  // the three are needed for the first frame (payments, ads and push
+  // are all opt-in, secondary features), so they now kick off in the
+  // background right after runApp() instead of gating it.
+  runApp(
+    const ProviderScope(
+      child: CommunityHubApp(),
+    ),
+  );
+
+  _initDeferredServices();
+}
+
+/// Best-effort background init for services the first frame doesn't need.
+/// Deliberately not awaited by main() -- see the comment above runApp().
+Future<void> _initDeferredServices() async {
   // ── Stripe ────────────────────────────────────────────────
-  // Payment providers are best-effort at startup — a missing/placeholder
-  // key shouldn't block the rest of the app from launching. Giving,
+  // Payment providers are best-effort — a missing/placeholder key
+  // shouldn't block the rest of the app from launching. Giving,
   // marketplace checkout, memberships and boosts will simply fail (with
   // a user-visible error) if a provider wasn't configured.
   try {
@@ -82,17 +108,11 @@ Future<void> main() async {
   }
 
   // ── Push Notifications (Firebase) ────────────────────────
+  // Includes the OS permission prompt (iOS, and Android 13+) -- letting
+  // this run after the app is already on-screen means the user sees the
+  // app itself before being asked to approve notifications, instead of
+  // staring at a blank screen while it waits for a response.
   await NotificationService.instance.initialize();
-
-  // ── YouTube ───────────────────────────────────────────────
-  YouTubeService.instance.setApiKey(AppConstants.youtubeApiKey);
-
-  // ── Run App ───────────────────────────────────────────────
-  runApp(
-    const ProviderScope(
-      child: CommunityHubApp(),
-    ),
-  );
 }
 
 class CommunityHubApp extends ConsumerWidget {

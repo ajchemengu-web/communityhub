@@ -48,10 +48,14 @@ from pathlib import Path
 
 import docx
 
-CHAPTER_ONLY_RE = re.compile(r'^(Chapter|Appendix)\s+([0-9]+|[A-Z])\s*$', re.IGNORECASE)
-CHAPTER_WITH_TITLE_RE = re.compile(r'^(Chapter|Appendix)\s+([0-9]+|[A-Z])\s*:\s*(.+)$', re.IGNORECASE)
+CHAPTER_ONLY_RE = re.compile(r'^(Chapter|Appendix|Project)\s+([0-9]+|[A-Z])\s*$', re.IGNORECASE)
+CHAPTER_WITH_TITLE_RE = re.compile(r'^(Chapter|Appendix|Project)\s+([0-9]+|[A-Z])\s*:\s*(.+)$', re.IGNORECASE)
 PART_ONLY_RE = re.compile(r'^PART\s+[IVXLC]+\s*$', re.IGNORECASE)
-PART_WITH_TITLE_RE = re.compile(r'^PART\s+[IVXLC]+\s*:\s*(.+)$', re.IGNORECASE)
+# Separator is a colon or an en/em dash -- deliberately NOT a plain ASCII
+# hyphen, which shows up in unrelated "PART I - XIV" range-summary lines
+# (e.g. a front-matter ToC blurb spanning multiple parts) that would
+# otherwise be misread as a real single-part boundary.
+PART_WITH_TITLE_RE = re.compile(r'^PART\s+[IVXLC]+\s*[:–—]\s*(.+)$', re.IGNORECASE)
 TOC_LINE_RE = re.compile(r'\t\d+\s*$')  # "Chapter 3: Title\t17" style ToC rows
 BULLET_CHARS = ('•', '‣', '-', '*', '▪', '�')
 
@@ -82,6 +86,18 @@ def is_bullet(text, style):
     return False
 
 
+TOC_SUMMARY_RE = re.compile(r'^(Chapters?|Projects?)\s+\d+\s*[-–—]\s*\d+', re.IGNORECASE)
+
+
+def _is_toc_summary_part(paras, i):
+    """True if paras[i] is a 'PART X -- Title' match that's actually a
+    front-matter ToC row (e.g. a "PART XV -- The Practical Lab" line
+    immediately followed by a "Projects 1-15" range-summary line)
+    rather than a real in-body Part boundary -- both use the identical
+    text pattern, so this is the only way to tell them apart."""
+    return i + 1 < len(paras) and TOC_SUMMARY_RE.match(paras[i + 1][0])
+
+
 def extract(path: Path):
     d = docx.Document(str(path))
     paras = [para_info(p) for p in d.paragraphs if p.text.strip()]
@@ -89,10 +105,12 @@ def extract(path: Path):
     # ── Find the first real chapter/part boundary (skip cover/ToC) ──
     first_content_idx = None
     for i, (text, style, bold, size) in enumerate(paras):
-        if style == 'Heading 1' or style == 'Heading 2':
+        if (style == 'Heading 1' or style == 'Heading 2') and \
+                text.strip().lower() not in ('table of contents', 'contents'):
             first_content_idx = i
             break
-        if PART_ONLY_RE.match(text) or PART_WITH_TITLE_RE.match(text):
+        if (PART_ONLY_RE.match(text) or PART_WITH_TITLE_RE.match(text)) \
+                and not _is_toc_summary_part(paras, i):
             first_content_idx = i
             break
         if CHAPTER_ONLY_RE.match(text) or CHAPTER_WITH_TITLE_RE.match(text):
@@ -124,14 +142,20 @@ def extract(path: Path):
         return len(bold_sizes[:4]) - 1
 
     # Real chapter/part headers in docs with no named Heading styles are
-    # set in a distinctly large font (~18pt+); a Table of Contents entry
-    # matches the same "Chapter N: Title" text pattern but at body/ToC
-    # font sizes (~10-11pt). Gate the regex-based (unstyled) detection
-    # path on size so ToC rows don't get mistaken for real boundaries.
-    # Named-style headings (style == 'Heading 1'/'Heading 2') have no
-    # such ambiguity and are handled separately below.
+    # set in a distinctly larger font than body text; a Table of
+    # Contents entry matches the same "Chapter N: Title" text pattern
+    # but at body/ToC font sizes (~10-11pt). Gate the regex-based
+    # (unstyled) detection path on size so ToC rows don't get mistaken
+    # for real boundaries. 12pt is the lowest confirmed real-boundary
+    # size seen so far (a book whose Part headers are bold 12pt against
+    # 11pt body text) -- the ToC-vs-real distinction for PART headers
+    # specifically is also independently verified by
+    # _is_toc_summary_part, so this doesn't reopen the original ToC-
+    # pollution bug that motivated the size gate. Named-style headings
+    # (style == 'Heading 1'/'Heading 2') have no such ambiguity and are
+    # handled separately below.
     def is_real_heading_size(size):
-        return size is None or size >= 13
+        return size is None or size >= 12
 
     chapters = []
     current = None
@@ -148,11 +172,11 @@ def extract(path: Path):
 
         part_title = None
         m = PART_WITH_TITLE_RE.match(text)
-        if m and is_real_heading_size(size):
+        if m and is_real_heading_size(size) and not _is_toc_summary_part(body, i):
             part_title = m.group(1).strip()
             i += 1
         elif PART_ONLY_RE.match(text) and i + 1 < n and body[i + 1][2] and \
-                is_real_heading_size(body[i + 1][3]):
+                is_real_heading_size(body[i + 1][3]) and not _is_toc_summary_part(body, i):
             # two-line "PART I" / "Foundations" form -- the marker line
             # itself is often small; gate on the title line that follows.
             part_title = body[i + 1][0].strip()

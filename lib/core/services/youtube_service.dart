@@ -90,12 +90,14 @@ class YouTubeService {
     // word "OR" is not special — it would just be searched as text).
     final query = '${AppConstants.faithKeywords.take(3).join('|')} '
         '${AppConstants.generalContentExclusions}';
-    return searchVideos(
+    final results = await searchVideos(
       query: query,
       maxResults: maxResults,
       pageToken: pageToken,
       order: 'relevance',
+      videoDuration: 'long',
     );
+    return _dropKidsContent(results);
   }
 
   // ── Career / Technology Hub Feed ──────────────────────────
@@ -104,13 +106,16 @@ class YouTubeService {
     String? pageToken,
   }) async {
     final query = '${AppConstants.techKeywords.take(3).join('|')} '
-        '${AppConstants.generalContentExclusions}';
-    return searchVideos(
+        '${AppConstants.generalContentExclusions} '
+        '${AppConstants.academicDepthQuery}';
+    final results = await searchVideos(
       query: query,
       maxResults: maxResults,
       pageToken: pageToken,
       order: 'relevance',
+      videoDuration: 'long',
     );
+    return _dropKidsContent(results);
   }
 
   // ── Generic hub feed — covers all new disciplines ─────────
@@ -122,31 +127,44 @@ class YouTubeService {
     final keywords = AppConstants.keywordsFor(hubType);
     if (keywords.isEmpty) return [];
     final query = _buildHubQuery(hubType, keywords);
-    return searchVideos(
+    final results = await searchVideos(
       query: query,
       maxResults: maxResults,
       pageToken: pageToken,
       order: 'relevance',
       // Real API-level filter, not a ranking hint -- see searchVideos'
-      // videoDuration doc comment for why this (not keyword-stuffing
-      // alone) is what actually keeps Shorts/meme content out of STEM
-      // hubs.
-      videoDuration: AppConstants.isStemHub(hubType) ? 'long' : null,
+      // videoDuration doc comment. Applied to every hub, not just STEM,
+      // now that off-topic Shorts/clips are a known problem everywhere.
+      videoDuration: 'long',
     );
+    return _dropKidsContent(results);
   }
+
+  /// Removes any result matching [AppConstants.isKidsContent] -- see its
+  /// doc comment for why this has to be a hard drop rather than another
+  /// query-level exclusion term: the query-level exclusions already in
+  /// [AppConstants.generalContentExclusions] were confirmed live to lose
+  /// against a sufficiently viral channel (billions of views beats a
+  /// `-baby -toddler -nursery` ranking hint every time), and once a
+  /// video like that gets cached, it wins the #1 slot on the home
+  /// feed's "All" tab regardless of which hub's query produced it.
+  List<YouTubeVideo> _dropKidsContent(List<YouTubeVideo> videos) =>
+      videos
+          .where((v) => !AppConstants.isKidsContent(
+                title: v.title,
+                description: v.description,
+                channelTitle: v.channelTitle,
+              ))
+          .toList();
 
   /// Builds the search query for a hub: a broad-but-relevant OR of the
   /// first few subject keywords, [AppConstants.generalContentExclusions]
-  /// (applied to every hub, to keep hugely popular but off-topic content
-  /// like baby/toddler channels from crowding out real results just
-  /// because they happen to match a keyword), plus — for STEM hubs
-  /// (Science/Engineering and their sub-hubs) specifically — an
-  /// academic-depth bias so results skew toward university/graduate/
-  /// research material instead of shallow, generic explainer content.
-  /// See [AppConstants.isStemHub] / [AppConstants.academicDepthQuery] —
-  /// and [getHubFeed]'s videoDuration: 'long' for STEM hubs, which is
-  /// what actually enforces this (a real API filter, unlike the keyword
-  /// bias below, which is just relevance-ranking noise on its own).
+  /// (applied to every hub, as a ranking hint -- see [_dropKidsContent]
+  /// for the actual enforcement), plus — for STEM hubs (Science/
+  /// Engineering and their sub-hubs) specifically — an academic-depth
+  /// bias so results skew toward university/graduate/research material
+  /// instead of shallow, generic explainer content. See
+  /// [AppConstants.isStemHub] / [AppConstants.academicDepthQuery].
   String _buildHubQuery(String hubType, List<String> keywords) {
     final core = keywords.take(3).join('|');
     final buffer = StringBuffer(core)
@@ -205,11 +223,19 @@ class YouTubeService {
     final keywords = AppConstants.keywordsFor(hubType);
     if (keywords.isEmpty) return const YouTubeSearchPage(videos: []);
     final query = _buildHubQuery(hubType, keywords);
-    return searchVideosPage(
+    final page = await searchVideosPage(
       query: query,
       maxResults: maxResults,
       pageToken: pageToken,
       order: 'relevance',
+    );
+    // No videoDuration filter here (unlike getHubFeed) -- this backs
+    // Reels' infinite scroll, which legitimately wants short-form video
+    // -- but the kids-content hard drop still applies regardless of
+    // length.
+    return YouTubeSearchPage(
+      videos: _dropKidsContent(page.videos),
+      nextPageToken: page.nextPageToken,
     );
   }
 

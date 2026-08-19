@@ -201,23 +201,36 @@ class FeedRepository {
           .range(offset, offset + limit - 1) as List<dynamic>;
 
       if (rows.isNotEmpty) {
-        return rows.map((yt) {
-          final m = Map<String, dynamic>.from(yt as Map);
-          return YouTubeVideo(
-            id: m['youtube_id'] as String,
-            title: m['title'] as String,
-            description: m['description'] as String? ?? '',
-            channelId: m['channel_id'] as String,
-            channelTitle: m['channel_title'] as String,
-            thumbnailUrl: m['thumbnail_url'] as String,
-            publishedAt:
-                DateTime.tryParse(m['published_at'] as String? ?? '') ??
-                    DateTime.now(),
-            viewCount: m['view_count'] as int?,
-            likeCount: m['like_count'] as int?,
-            duration: m['duration'] as String?,
-          );
-        }).toList();
+        // Belt-and-suspenders: the cache-refresh edge function and the
+        // live-fetch path (YouTubeService) both already drop kids
+        // content before it's ever cached/returned, but this also
+        // catches any row cached before that filter existed and hasn't
+        // expired yet -- see AppConstants.isKidsContent's doc comment
+        // for why this can't just be a query-level exclusion term.
+        return rows
+            .map((yt) {
+              final m = Map<String, dynamic>.from(yt as Map);
+              return YouTubeVideo(
+                id: m['youtube_id'] as String,
+                title: m['title'] as String,
+                description: m['description'] as String? ?? '',
+                channelId: m['channel_id'] as String,
+                channelTitle: m['channel_title'] as String,
+                thumbnailUrl: m['thumbnail_url'] as String,
+                publishedAt:
+                    DateTime.tryParse(m['published_at'] as String? ?? '') ??
+                        DateTime.now(),
+                viewCount: m['view_count'] as int?,
+                likeCount: m['like_count'] as int?,
+                duration: m['duration'] as String?,
+              );
+            })
+            .where((v) => !AppConstants.isKidsContent(
+                  title: v.title,
+                  description: v.description,
+                  channelTitle: v.channelTitle,
+                ))
+            .toList();
       }
     } catch (_) {}
 

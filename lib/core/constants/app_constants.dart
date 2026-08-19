@@ -379,6 +379,49 @@ abstract class AppConstants {
   static const String generalContentExclusions =
       '-baby -toddler -nursery';
 
+  /// Hard content-safety block list: any video whose title, description,
+  /// or channel name matches one of these terms is dropped entirely --
+  /// never cached, never shown -- regardless of view count or keyword
+  /// relevance to a hub's own search terms.
+  ///
+  /// Unlike [generalContentExclusions] (a soft `-word` search-query hint
+  /// that YouTube's popularity-driven relevance ranking can and does
+  /// override for a sufficiently viral channel), this is enforced as an
+  /// actual drop. This distinction is load-bearing: a "language
+  /// learning" toddler-education channel with billions of views
+  /// defeated the `-baby -toddler -nursery` query hint and still won
+  /// the #1 slot on the home feed's "All" tab -- which reads every
+  /// hub's cached videos together with no hub filter at all, sorted
+  /// purely by raw view count (see FeedRepository.fetchCachedVideos).
+  /// Once a viral video is cached under any hub, no per-hub query
+  /// change can stop it from dominating "All"; it has to never be
+  /// cached in the first place. See [isKidsContent].
+  static const List<String> kidsContentBlockTerms = [
+    'baby', 'babies', 'toddler', 'infant', 'infants',
+    'nursery rhyme', 'nursery rhymes', 'lullaby', 'lullabies',
+    'preschool', 'pre-school', 'kindergarten', 'peekaboo',
+    'ms rachel', 'songs for littles', 'cocomelon', 'baby shark',
+    'first words', 'learning video for babies', 'kids learning video',
+    // Kids/children content channels don't always use "baby"/"toddler"
+    // wording -- e.g. "Jack Hartmann Kids Music Channel" (363M views)
+    // and "Adi Connection"'s "Kids English Words & Vocabulary" both
+    // slipped past the terms above on a live cache refresh.
+    'kids', 'children\'s', 'for children', 'kindergarteners',
+  ];
+
+  /// True if [title]/[description]/[channelTitle] match
+  /// [kidsContentBlockTerms] -- see that field's doc comment for why
+  /// this exists as a hard filter separate from the softer, defeatable
+  /// query-level exclusions.
+  static bool isKidsContent({
+    required String title,
+    required String description,
+    required String channelTitle,
+  }) {
+    final text = '$title $description $channelTitle'.toLowerCase();
+    return kidsContentBlockTerms.any((term) => text.contains(term));
+  }
+
   /// Returns the keyword list for a given hub type
   static List<String> keywordsFor(String hubType) {
     switch (hubType) {

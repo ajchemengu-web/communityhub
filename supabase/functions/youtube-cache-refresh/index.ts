@@ -27,16 +27,46 @@ const YT_BASE = "https://www.googleapis.com/youtube/v3";
 // only.
 const GENERAL_EXCLUSIONS = "-baby -toddler -nursery";
 const ACADEMIC_DEPTH = "university lecture advanced research -kids -cartoon";
+
+// Hard content-safety block list -- mirrors AppConstants.kidsContentBlockTerms
+// in lib/core/constants/app_constants.dart. Unlike GENERAL_EXCLUSIONS (a
+// soft `-word` query hint YouTube's popularity-driven relevance ranking
+// can and does override for a sufficiently viral channel -- confirmed
+// live: a toddler-education channel with billions of views defeated
+// `-baby -toddler -nursery` and still got cached, then won the #1 slot
+// on the app's home-feed "All" tab, which reads every hub's cached
+// videos together sorted by raw view count with no hub filter at all),
+// this is enforced as an actual drop BEFORE anything reaches the cache
+// -- once a video like that is cached, no per-hub query change can stop
+// it from dominating "All". Keep in sync with the Dart list.
+const KIDS_CONTENT_BLOCK_TERMS = [
+  "baby", "babies", "toddler", "infant", "infants",
+  "nursery rhyme", "nursery rhymes", "lullaby", "lullabies",
+  "preschool", "pre-school", "kindergarten", "peekaboo",
+  "ms rachel", "songs for littles", "cocomelon", "baby shark",
+  "first words", "learning video for babies", "kids learning video",
+  // Kids/children content channels don't always use "baby"/"toddler"
+  // wording -- e.g. "Jack Hartmann Kids Music Channel" (363M views)
+  // and "Adi Connection"'s "Kids English Words & Vocabulary" both
+  // slipped past the terms above on a live cache refresh.
+  "kids", "children's", "for children", "kindergarteners",
+];
+
+function isKidsContent(title: string, description: string, channelTitle: string): boolean {
+  const text = `${title} ${description} ${channelTitle}`.toLowerCase();
+  return KIDS_CONTENT_BLOCK_TERMS.some((term) => text.includes(term));
+}
+
 const HUB_QUERIES: Record<string, string> = {
   faith: `gospel|worship|sermon ${GENERAL_EXCLUSIONS}`,
-  technology: `programming|software engineering|cybersecurity ${GENERAL_EXCLUSIONS}`,
+  technology: `programming|software engineering|cybersecurity ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
   // Engineering used to just ride along inside the generic `technology`
   // query above (whose keywords never mention engineering at all) — now
   // gets its own dedicated, academically-biased query, matching the app.
   engineering: `engineering|mechanical engineering|civil engineering ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
   science: `biology|chemistry|physics ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
   languages: `foreign language course|language learning for adults|polyglot ${GENERAL_EXCLUSIONS}`,
-  career: `programming|software engineering|cybersecurity ${GENERAL_EXCLUSIONS}`,
+  career: `programming|software engineering|cybersecurity ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
   biology: `biology|cell biology|genetics ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
   computer_science: `computer science|algorithms|data structures ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
   history: `history|ancient history|world war ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
@@ -60,23 +90,20 @@ const HUB_QUERIES: Record<string, string> = {
   aviation: `aviation|aeronautics|pilot ${GENERAL_EXCLUSIONS} ${ACADEMIC_DEPTH}`,
 };
 
-// Mirrors AppConstants.stemHubTypes. Confirmed live that ACADEMIC_DEPTH's
-// keyword bias alone does NOT keep Shorts/meme content out (a real
-// backfill still surfaced "Periodic Table Song" and #shorts clips ahead
-// of any lecture content for the chemistry hub) -- YouTube's relevance
-// ranking is fundamentally popularity-driven and doesn't treat trailing
-// query text as a hard filter. videoDuration=long is an actual API-level
-// filter: university lectures/research talks are almost always >20min,
-// while the junk polluting these hubs is almost always Shorts/clips.
-const STEM_HUBS = new Set([
-  "science", "biology", "chemistry", "physics", "mathematics",
-  "psychology", "geography", "history",
-  "engineering", "robotics", "aviation", "computer_science",
-]);
-
+// Confirmed live that ACADEMIC_DEPTH's keyword bias alone does NOT keep
+// Shorts/meme content out (a real backfill still surfaced "Periodic
+// Table Song" and #shorts clips ahead of any lecture content for the
+// chemistry hub) -- YouTube's relevance ranking is fundamentally
+// popularity-driven and doesn't treat trailing query text as a hard
+// filter. videoDuration=long is an actual API-level filter: university
+// lectures/research talks are almost always >20min, while the junk
+// polluting these hubs is almost always Shorts/clips. Applied to every
+// hub now, not just STEM -- the exact video that prompted this (a viral
+// toddler-education channel surfacing in the Languages hub) was 60
+// minutes long, so duration alone wouldn't have caught it either; see
+// KIDS_CONTENT_BLOCK_TERMS above for the filter that actually did.
 async function searchHub(hubType: string, query: string) {
-  const durationParam = STEM_HUBS.has(hubType) ? "&videoDuration=long" : "";
-  const url = `${YT_BASE}/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=50&order=relevance&safeSearch=strict${durationParam}&key=${YOUTUBE_API_KEY}`;
+  const url = `${YT_BASE}/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=50&order=relevance&safeSearch=strict&videoDuration=long&key=${YOUTUBE_API_KEY}`;
   const res = await fetch(url);
   if (!res.ok) {
     const body = await res.text();
@@ -139,6 +166,13 @@ Deno.serve(async (req: Request) => {
 
       const rows = items
         .filter((it) => it.id?.videoId)
+        .filter((it) =>
+          !isKidsContent(
+            it.snippet?.title ?? "",
+            it.snippet?.description ?? "",
+            it.snippet?.channelTitle ?? "",
+          )
+        )
         .map((it) => {
           const id = it.id.videoId as string;
           const detail = details.get(id);

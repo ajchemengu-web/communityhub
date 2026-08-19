@@ -34,6 +34,7 @@ abstract class AppRoutes {
   static const String createCommunity = '/communities/create';
   static const String myChurch = '/my-church';
   static const String communityAnnouncements = '/community/:communityId/announcements';
+  static const String groupDetail = '/community/:communityId/group/:groupId';
 
   // ── Chat ──────────────────────────────────────────────────
   static const String chats = '/chats';

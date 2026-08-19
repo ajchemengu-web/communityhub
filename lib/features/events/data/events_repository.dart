@@ -11,10 +11,11 @@ class EventsRepository {
   final _client = SupabaseService.client;
 
   static const _eventSelect = '''
-    id, title, description, community_id, organizer_id,
+    id, title, description, community_id, group_id, organizer_id,
     cover_url, type, is_online, location, meeting_url,
     start_time, end_time, created_at, going_count, maybe_count,
     communities(name),
+    group:community_channels(name),
     organizer:profiles!organizer_id(full_name, avatar_url),
     rsvps(user_id, status)
   ''';
@@ -23,6 +24,7 @@ class EventsRepository {
 
   Future<List<EventModel>> fetchEvents({
     String? communityId,
+    String? groupId,
     EventType? type,
     bool upcomingOnly = false,
     bool pastOnly = false,
@@ -32,6 +34,9 @@ class EventsRepository {
 
     if (communityId != null) {
       query = query.eq('community_id', communityId) as dynamic;
+    }
+    if (groupId != null) {
+      query = query.eq('group_id', groupId) as dynamic;
     }
     if (type != null) {
       query = query.eq('type', _typeString(type)) as dynamic;
@@ -110,6 +115,7 @@ class EventsRepository {
     required String title,
     required String? description,
     required String? communityId,
+    String? groupId,
     required EventType type,
     required bool isOnline,
     required String? location,
@@ -125,6 +131,7 @@ class EventsRepository {
           'title': title,
           'description': description,
           'community_id': communityId,
+          'group_id': groupId,
           'organizer_id': uid,
           'type': _typeString(type),
           'is_online': isOnline,

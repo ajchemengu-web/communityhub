@@ -23,6 +23,7 @@ import '../../features/chat/presentation/screens/call_screen.dart';
 import '../../features/communities/presentation/screens/communities_screen.dart';
 import '../../features/communities/presentation/screens/community_detail_screen.dart';
 import '../../features/communities/presentation/screens/community_members_screen.dart';
+import '../../features/communities/presentation/screens/group_detail_screen.dart';
 import '../../features/communities/presentation/screens/create_community_screen.dart';
 import '../../features/my_church/presentation/my_church_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
@@ -200,6 +201,13 @@ GoRouter appRouter(AppRouterRef ref) {
           channelIcon: Icons.campaign_rounded,
           iconColor: const Color(0xFF1A7A6B),
           isAnnouncements: true,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.groupDetail,
+        builder: (ctx, state) => GroupDetailScreen(
+          communityId: state.pathParameters['communityId']!,
+          groupId: state.pathParameters['groupId']!,
         ),
       ),
       GoRoute(

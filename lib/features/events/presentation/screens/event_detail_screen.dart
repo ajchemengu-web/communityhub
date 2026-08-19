@@ -416,6 +416,15 @@ class _MetaSection extends StatelessWidget {
               subtitle: 'Hosted by community',
             ),
           ],
+          if (event.groupName != null) ...[
+            const Divider(color: AppColors.darkBorder, height: 24),
+            _MetaRow(
+              icon: Icons.tag_outlined,
+              iconColor: AppColors.secondary,
+              title: event.groupName!,
+              subtitle: 'Only visible to this group',
+            ),
+          ],
           if (event.organizerName != null) ...[
             const Divider(color: AppColors.darkBorder, height: 24),
             _MetaRow(

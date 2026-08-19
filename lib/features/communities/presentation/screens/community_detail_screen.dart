@@ -48,6 +48,10 @@ class _CommunityDetailScreenState
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => CommunityChannelScreen(
         communityId: c.id,
+        // Default channels (Announcements/General) stay ungrouped so
+        // their posts keep showing in the main feed; only real custom
+        // groups get a partitioned feed.
+        channelId: ch.isDefault ? null : ch.id,
         channelName: ch.name,
         channelIcon: isAnnouncements
             ? Icons.campaign_rounded
@@ -408,6 +412,10 @@ class _CommunityDetailScreenState
                         subtitle: '',
                         time: '',
                         onTap: () => _openChannel(c, ch),
+                        onInfoTap: ch.isDefault
+                            ? null
+                            : () => context
+                                .push('/community/${c.id}/group/${ch.id}'),
                       )),
           ],
 
@@ -583,6 +591,7 @@ class _ChannelRow extends StatelessWidget {
     required this.subtitle,
     required this.time,
     required this.onTap,
+    this.onInfoTap,
   });
   final IconData icon;
   final Color iconColor;
@@ -591,6 +600,11 @@ class _ChannelRow extends StatelessWidget {
   final String subtitle;
   final String time;
   final VoidCallback onTap;
+
+  /// Opens the group's detail screen (members, join/leave, leaders).
+  /// Null for Announcements/General, which have no membership concept
+  /// of their own.
+  final VoidCallback? onInfoTap;
 
   @override
   Widget build(BuildContext context) {
@@ -622,11 +636,17 @@ class _ChannelRow extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: time.isNotEmpty
-              ? Text(time,
-                  style: const TextStyle(
-                      color: Colors.white38, fontSize: 11))
-              : null,
+          trailing: onInfoTap != null
+              ? IconButton(
+                  icon: const Icon(Icons.info_outline,
+                      color: Colors.white38, size: 20),
+                  onPressed: onInfoTap,
+                )
+              : time.isNotEmpty
+                  ? Text(time,
+                      style: const TextStyle(
+                          color: Colors.white38, fontSize: 11))
+                  : null,
         ),
         const Divider(
             color: Colors.white10, height: 1, indent: 82),
@@ -819,35 +839,12 @@ class _ManageGroupsScreenState
           ),
           const Divider(color: Colors.white10, height: 1, indent: 72),
 
-          // Add existing groups
-          ListTile(
-            onTap: () {},
-            leading: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.add, color: Colors.white, size: 28),
-            ),
-            title: const Text('Add existing groups',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500)),
-          ),
-          // Matches the divider above (indent: 72, clearing the 48px icon
-          // + its padding) -- this one was full-width before, which read
-          // as an inconsistency between the two rows immediately above.
-          const Divider(color: Colors.white10, height: 1, indent: 72),
-
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Members can suggest existing groups for admin\napproval and add new groups directly.',
+                'Any approved community member can join a group\ninstantly — no approval needed.',
                 style: TextStyle(color: Colors.white38, fontSize: 12, height: 1.4),
               ),
             ),
@@ -1088,12 +1085,19 @@ class CommunityChannelScreen extends ConsumerStatefulWidget {
   const CommunityChannelScreen({
     super.key,
     required this.communityId,
+    this.channelId,
     required this.channelName,
     required this.channelIcon,
     required this.iconColor,
     required this.isAnnouncements,
   });
   final String communityId;
+
+  /// Null for the default Announcements/General channels -- their posts
+  /// stay ungrouped (`channel_id IS NULL`) so they keep showing in the
+  /// community's main feed. Set only for real custom groups, which get
+  /// their own partitioned feed.
+  final String? channelId;
   final String channelName;
   final IconData channelIcon;
   final Color iconColor;
@@ -1131,13 +1135,20 @@ class _CommunityChannelScreenState
       // be empty in the second case and never update.
       return;
     } else {
-      // General channel — load community posts as messages
+      // General / group channel — load community posts as messages,
+      // scoped to this channel (or, when channelId is null, restricted
+      // to ungrouped posts so a default General channel doesn't leak
+      // custom groups' posts into it).
       try {
-        final rows = await SupabaseService.client
+        var query = SupabaseService.client
             .from('posts')
             .select(
                 '*, users!posts_author_id_fkey(username, full_name, avatar_url)')
-            .eq('community_id', widget.communityId)
+            .eq('community_id', widget.communityId);
+        query = widget.channelId != null
+            ? query.eq('channel_id', widget.channelId!)
+            : query.isFilter('channel_id', null);
+        final rows = await query
             .order('created_at', ascending: true)
             .limit(50) as List<dynamic>;
 
@@ -1190,10 +1201,27 @@ class _CommunityChannelScreenState
         await SupabaseService.client.from('posts').insert({
           'author_id': uid,
           'community_id': widget.communityId,
+          if (widget.channelId != null) 'channel_id': widget.channelId,
           'content': text,
           'media_type': 'text',
         });
-      } catch (_) {}
+      } catch (e) {
+        // Most commonly: RLS blocked the insert because the user hasn't
+        // joined this group yet. Don't fabricate a local message bubble
+        // for a post that didn't actually save.
+        if (mounted) {
+          setState(() => _sending = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(widget.channelId != null
+                  ? 'Join this group to post here.'
+                  : 'Couldn\'t send: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
 
       setState(() {
         _messages.add({

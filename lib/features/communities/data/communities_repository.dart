@@ -7,6 +7,7 @@ import '../domain/models/announcement_model.dart';
 import '../domain/models/brand_partnership_model.dart';
 import '../domain/models/community_channel_model.dart';
 import '../domain/models/community_model.dart';
+import '../domain/models/group_member_model.dart';
 
 /// All Supabase interactions for communities, membership, and announcements.
 class CommunitiesRepository {
@@ -169,7 +170,8 @@ class CommunitiesRepository {
       'joined_at': community.isPrivate ? null : DateTime.now().toIso8601String(),
     });
 
-    // If approved, increment count
+    // If approved, increment count + enroll into the community's default
+    // groups (Announcements/General) so posting there keeps working.
     if (!community.isPrivate) {
       await _db.rpc('increment_community_members', params: {
         'community_id_param': community.id,
@@ -179,6 +181,7 @@ class CommunitiesRepository {
           'members_count': community.membersCount + 1,
         }).eq('id', community.id);
       });
+      await _enrollInDefaultGroups(community.id, uid);
     }
 
     return community.copyWith(
@@ -442,6 +445,9 @@ class CommunitiesRepository {
             })
         .toList();
     await _db.from('community_members').upsert(rows, onConflict: 'community_id,user_id');
+    for (final id in userIds) {
+      await _enrollInDefaultGroups(communityId, id);
+    }
   }
 
   // ── Join requests ──────────────────────────────────────────
@@ -478,6 +484,7 @@ class CommunitiesRepository {
         .update({'status': 'approved'})
         .eq('community_id', communityId)
         .eq('user_id', userId);
+    await _enrollInDefaultGroups(communityId, userId);
   }
 
   Future<void> rejectRequest(String communityId, String userId) async {
@@ -592,6 +599,144 @@ class CommunitiesRepository {
     } catch (_) {}
   }
 
+  // ── Group membership ──────────────────────────────────────
+  // group_members mirrors community_members' shape (role/status/joined_at
+  // + users embed) but is keyed off community_channels (a "group"). Open
+  // join per product decision -- joinGroup() inserts 'approved' directly,
+  // no pending step.
+
+  Future<List<GroupMemberModel>> fetchGroupMembers(String groupId) async {
+    try {
+      final rows = await _db
+          .from('group_members')
+          .select(
+              'user_id, role, status, joined_at, users(id, username, full_name, avatar_url, is_verified)')
+          .eq('group_id', groupId)
+          .eq('status', 'approved')
+          .order('joined_at', ascending: true) as List<dynamic>;
+      return rows
+          .map((r) => GroupMemberModel.fromMap(Map<String, dynamic>.from(r as Map)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> joinGroup(String groupId) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) throw Exception('Not authenticated');
+    await _db.from('group_members').upsert({
+      'group_id': groupId,
+      'user_id': uid,
+      'role': 'member',
+      'status': 'approved',
+    }, onConflict: 'group_id,user_id');
+  }
+
+  Future<void> leaveGroup(String groupId) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) throw Exception('Not authenticated');
+    await _db
+        .from('group_members')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('user_id', uid);
+  }
+
+  /// Changes [userId]'s role within [groupId] (promote to leader / demote
+  /// back to member).
+  Future<void> updateGroupMemberRole(
+    String groupId,
+    String userId,
+    String newRole,
+  ) async {
+    await _db
+        .from('group_members')
+        .update({'role': newRole})
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+  }
+
+  Future<void> removeGroupMember(String groupId, String userId) async {
+    await _db
+        .from('group_members')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+  }
+
+  /// Returns the current user's role in [groupId], or null if not a member.
+  Future<String?> fetchMyGroupRole(String groupId) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return null;
+    try {
+      final row = await _db
+          .from('group_members')
+          .select('role')
+          .eq('group_id', groupId)
+          .eq('user_id', uid)
+          .eq('status', 'approved')
+          .maybeSingle();
+      return row == null ? null : row['role'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Groups within [communityId] that the current user actually belongs
+  /// to -- feeds the event-creation group picker (you can only scope an
+  /// event to a group you're in).
+  Future<List<CommunityChannelModel>> fetchMyGroups(String communityId) async {
+    final uid = SupabaseService.currentUserId;
+    if (uid == null) return [];
+    try {
+      final rows = await _db
+          .from('group_members')
+          .select('community_channels!inner(*)')
+          .eq('user_id', uid)
+          .eq('status', 'approved')
+          .eq('community_channels.community_id', communityId) as List<dynamic>;
+      return rows
+          .map((r) {
+            final ch = (r as Map)['community_channels'] as Map<String, dynamic>?;
+            return ch == null
+                ? null
+                : CommunityChannelModel.fromMap(Map<String, dynamic>.from(ch));
+          })
+          .whereType<CommunityChannelModel>()
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Auto-enrolls [userId] into [communityId]'s default groups
+  /// (Announcements + General). Called wherever a user becomes an
+  /// approved community member (joinCommunity, approveRequest,
+  /// addMembers) so posting/reading "General" keeps working without a
+  /// separate manual group-join step.
+  Future<void> _enrollInDefaultGroups(String communityId, String userId) async {
+    try {
+      final defaults = await _db
+          .from('community_channels')
+          .select('id')
+          .eq('community_id', communityId)
+          .eq('is_default', true) as List<dynamic>;
+      if (defaults.isEmpty) return;
+      final rows = defaults
+          .map((d) => {
+                'group_id': (d as Map)['id'],
+                'user_id': userId,
+                'role': 'member',
+                'status': 'approved',
+              })
+          .toList();
+      await _db.from('group_members').upsert(rows, onConflict: 'group_id,user_id');
+    } catch (_) {
+      // Non-fatal: community membership itself already succeeded.
+    }
+  }
+
   // ── Community posts ────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> fetchCommunityPosts(
@@ -605,7 +750,10 @@ class CommunitiesRepository {
         .from('posts')
         .select('*, users(username, full_name, avatar_url, is_verified)')
         .eq('community_id', communityId)
-        .eq('moderation_status', 'approved');
+        .eq('moderation_status', 'approved')
+        // Group posts have their own partitioned feed (see
+        // CommunityChannelScreen) -- exclude them from the main feed.
+        .isFilter('channel_id', null);
 
     if (excludedIds.isNotEmpty) {
       q = q.not('author_id', 'in', excludedIds);

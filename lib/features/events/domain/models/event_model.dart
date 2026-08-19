@@ -72,6 +72,8 @@ class EventModel {
     this.description,
     this.communityId,
     this.communityName,
+    this.groupId,
+    this.groupName,
     this.organizerId,
     this.organizerName,
     this.organizerAvatar,
@@ -90,6 +92,12 @@ class EventModel {
   final String? description;
   final String? communityId;
   final String? communityName;
+
+  /// Scopes this event to a specific group within [communityId]. Only
+  /// that group's members can see/create events scoped to it (see
+  /// is_group_member() RLS on the events table).
+  final String? groupId;
+  final String? groupName;
   final String? organizerId;
   final String? organizerName;
   final String? organizerAvatar;
@@ -142,6 +150,7 @@ class EventModel {
     String? currentUserId,
   }) {
     final community = map['communities'] as Map?;
+    final group = map['group'] as Map?;
     final organizer = map['organizer'] as Map?;
 
     // Parse user RSVP from rsvps array if present
@@ -163,6 +172,8 @@ class EventModel {
       description: map['description'] as String?,
       communityId: map['community_id'] as String?,
       communityName: community?['name'] as String?,
+      groupId: map['group_id'] as String?,
+      groupName: group?['name'] as String?,
       organizerId: map['organizer_id'] as String?,
       organizerName: organizer?['full_name'] as String?,
       organizerAvatar: organizer?['avatar_url'] as String?,
@@ -231,6 +242,8 @@ class EventModel {
         description: description ?? this.description,
         communityId: communityId,
         communityName: communityName,
+        groupId: groupId,
+        groupName: groupName,
         organizerId: organizerId,
         organizerName: organizerName,
         organizerAvatar: organizerAvatar,

@@ -14,6 +14,12 @@
       "port": 8080
     },
     {
+      "name": "Flutter (Web Server)",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": ["run", "-d", "web-server", "--web-port", "8090"],
+      "port": 8090
+    },
+    {
       "name": "Flutter (Windows)",
       "runtimeExecutable": "flutter",
       "runtimeArgs": ["run", "-d", "windows"],

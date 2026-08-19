@@ -10,13 +10,14 @@ import '../../../../core/services/supabase_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../communities/data/communities_repository.dart';
+import '../../../communities/domain/models/community_channel_model.dart';
 import '../../../communities/domain/models/community_model.dart';
 import '../../data/events_repository.dart';
 import '../../domain/models/event_model.dart';
 import '../providers/events_provider.dart';
 
 class CreateEventScreen extends ConsumerStatefulWidget {
-  const CreateEventScreen({super.key, this.communityId});
+  const CreateEventScreen({super.key, this.communityId, this.groupId});
 
   /// Pre-selects and locks the community this event belongs to, for
   /// when this screen is reached from a community's own "Create Event"
@@ -24,6 +25,11 @@ class CreateEventScreen extends ConsumerStatefulWidget {
   /// generic /events/create route) means the user picks from their own
   /// communities in-screen, or leaves it as a personal event.
   final String? communityId;
+
+  /// Pre-selects and locks the group this event belongs to, for when
+  /// this screen is reached from a group's own "Create event for this
+  /// group" entry point. Only meaningful alongside [communityId].
+  final String? groupId;
 
   @override
   ConsumerState<CreateEventScreen> createState() =>
@@ -58,14 +64,26 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   bool _loadingCommunities = true;
   String? _selectedCommunityId;
 
+  // ── Group selection ──────────────────────────────────────────
+  // Only offered once a community is selected -- and only groups the
+  // organizer actually belongs to (fetchMyGroups), since events.group_id
+  // requires is_group_member(group_id) to insert/read.
+  List<CommunityChannelModel> _myGroups = [];
+  bool _loadingGroups = false;
+  String? _selectedGroupId;
+
   @override
   void initState() {
     super.initState();
     _selectedCommunityId = widget.communityId;
+    _selectedGroupId = widget.groupId;
     if (widget.communityId == null) {
       _loadMyCommunities();
     } else {
       _loadingCommunities = false;
+      // Already locked to a specific group by the caller -- no need to
+      // fetch the full list of groups the organizer belongs to.
+      if (widget.groupId == null) _loadMyGroups(widget.communityId!);
     }
   }
 
@@ -130,7 +148,71 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     // '' is the sentinel for "explicitly chose no community" (distinct
     // from null, which means "sheet dismissed without a choice").
     if (selected != null) {
-      setState(() => _selectedCommunityId = selected.isEmpty ? null : selected);
+      final newCommunityId = selected.isEmpty ? null : selected;
+      setState(() {
+        _selectedCommunityId = newCommunityId;
+        _selectedGroupId = null;
+        _myGroups = [];
+      });
+      if (newCommunityId != null) _loadMyGroups(newCommunityId);
+    }
+  }
+
+  Future<void> _loadMyGroups(String communityId) async {
+    setState(() => _loadingGroups = true);
+    try {
+      final groups =
+          await CommunitiesRepository.instance.fetchMyGroups(communityId);
+      if (mounted) setState(() { _myGroups = groups; _loadingGroups = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingGroups = false);
+    }
+  }
+
+  Future<void> _pickGroup() async {
+    final selected = await showModalBottomSheet<String?>(
+      context: context,
+      backgroundColor: AppColors.darkSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Scope to a group', style: AppTextStyles.titleMedium),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.groups_2_outlined,
+                  color: AppColors.textSecondary),
+              title: const Text('No group (whole community)'),
+              trailing: _selectedGroupId == null
+                  ? const Icon(Icons.check, color: AppColors.primary)
+                  : null,
+              onTap: () => Navigator.pop(context, ''),
+            ),
+            const Divider(height: 1, color: AppColors.darkBorder),
+            ..._myGroups.map((g) => ListTile(
+                  leading: const Icon(Icons.tag_outlined,
+                      color: AppColors.textSecondary),
+                  title: Text(g.name),
+                  trailing: _selectedGroupId == g.id
+                      ? const Icon(Icons.check, color: AppColors.primary)
+                      : null,
+                  onTap: () => Navigator.pop(context, g.id),
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (selected != null) {
+      setState(() => _selectedGroupId = selected.isEmpty ? null : selected);
     }
   }
 
@@ -246,6 +328,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             ? null
             : _descCtrl.text.trim(),
         communityId: _selectedCommunityId,
+        groupId: _selectedGroupId,
         type: _type,
         isOnline: _isOnline,
         location: _isOnline ? null : _locationCtrl.text.trim().isEmpty
@@ -406,6 +489,65 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                                                 c.id == _selectedCommunityId,
                                                 orElse: () =>
                                                     _myCommunities.first)
+                                            .name,
+                                    style: AppTextStyles.bodyMedium,
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right,
+                                    color: AppColors.textSecondary),
+                              ],
+                            ),
+                          ),
+                        ),
+              const SizedBox(height: 24),
+            ],
+
+            // Group (only once a community is selected — mirrors
+            // _pickCommunity's picker, populated from fetchMyGroups so
+            // only groups the organizer belongs to are offered)
+            if (_selectedCommunityId != null && widget.groupId == null) ...[
+              const _SectionLabel('Group (optional)'),
+              const SizedBox(height: 12),
+              _loadingGroups
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.primary),
+                      ),
+                    )
+                  : _myGroups.isEmpty
+                      ? Text(
+                          "No groups to scope this to yet — it'll be visible to the whole community.",
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.textSecondary),
+                        )
+                      : GestureDetector(
+                          onTap: _pickGroup,
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: AppColors.darkSurface,
+                              borderRadius: BorderRadius.circular(12),
+                              border:
+                                  Border.all(color: AppColors.darkBorder),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.tag_outlined,
+                                    color: AppColors.primary),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _selectedGroupId == null
+                                        ? 'No group (whole community)'
+                                        : _myGroups
+                                            .firstWhere((g) =>
+                                                g.id == _selectedGroupId,
+                                                orElse: () =>
+                                                    _myGroups.first)
                                             .name,
                                     style: AppTextStyles.bodyMedium,
                                   ),

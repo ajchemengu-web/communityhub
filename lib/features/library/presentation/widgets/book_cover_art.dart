@@ -29,7 +29,15 @@ class BookCoverArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scale = width / 64;
-    return AspectRatio(
+    // Self-constrain to `width` rather than relying on the caller to
+    // wrap this in a SizedBox: AspectRatio needs a bounded width, but a
+    // plain (non-Expanded) child of a Row gets unbounded width from its
+    // parent -- both call sites (the library tile and the reader hero)
+    // place this directly inside a Row, which would otherwise throw a
+    // layout exception and render nothing.
+    return SizedBox(
+      width: width,
+      child: AspectRatio(
       aspectRatio: 2 / 3,
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -146,6 +154,7 @@ class BookCoverArt extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }

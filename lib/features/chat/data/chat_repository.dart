@@ -90,15 +90,19 @@ class ChatRepository {
       throw Exception('You can\'t message this user.');
     }
 
-    // Check if a direct conversation already exists between these two users
-    final existing = await SupabaseService.client.rpc(
+    // Check if a direct conversation already exists between these two
+    // users. get_direct_conversation(other_user_id) is SECURITY DEFINER
+    // and derives the calling user from auth.uid() itself (rather than
+    // trusting a client-supplied "user_a", which would let any caller
+    // query conversations on another user's behalf) -- it returns a
+    // single conversation id (or null), not a row set.
+    final existingId = await SupabaseService.client.rpc(
       'get_direct_conversation',
-      params: {'user_a': uid, 'user_b': otherUserId},
-    ) as List<dynamic>;
+      params: {'other_user_id': otherUserId},
+    ) as String?;
 
-    if (existing.isNotEmpty) {
-      final row = existing.first as Map<String, dynamic>;
-      return _fetchSingleConversation(row['id'] as String);
+    if (existingId != null) {
+      return _fetchSingleConversation(existingId);
     }
 
     // Create new direct conversation

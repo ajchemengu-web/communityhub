@@ -6,6 +6,9 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/presentation/providers/current_user_provider.dart';
+import '../../../library/data/library_books.dart';
+import '../../../library/presentation/screens/book_reader_screen.dart';
+import '../../../library/presentation/widgets/book_cover_art.dart';
 import '../../../scriptures/presentation/screens/bible_screen.dart';
 import '../../../scriptures/presentation/screens/quran_screen.dart';
 import '../../domain/models/community_model.dart';
@@ -47,6 +50,11 @@ class CommunitiesScreen extends ConsumerWidget {
           children: [
             // ── Scripture Communities (always pinned at top) ────────
             _ScriptureSection(religion: religion),
+            const Divider(color: Colors.white10, height: 1),
+
+            // ── Author's Library (same page as Scripture, per product
+            //    decision: visible to everyone, no membership needed) ──
+            const _LibrarySection(),
             const Divider(color: Colors.white10, height: 1),
 
             // ── New community tile ─────────────────────────────────
@@ -492,6 +500,107 @@ class _ScriptureTile extends StatelessWidget {
               const SizedBox(width: 8),
               Icon(Icons.chevron_right,
                   color: accentColor.withValues(alpha: 0.6), size: 22),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Author's Library (books, alongside Scripture)
+// ─────────────────────────────────────────────────────────────────
+
+class _LibrarySection extends StatelessWidget {
+  const _LibrarySection();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, 10),
+          child: Text(
+            "AUTHOR'S LIBRARY",
+            style: TextStyle(
+              color: Colors.white38,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        for (final book in libraryBooks) _LibraryTile(meta: book),
+      ],
+    );
+  }
+}
+
+class _LibraryTile extends StatelessWidget {
+  const _LibraryTile({required this.meta});
+  final LibraryBookMeta meta;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => BookReaderScreen(meta: meta)),
+      ),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              meta.bgColor,
+              Color.lerp(meta.bgColor, meta.accentColor, 0.12)!,
+            ],
+          ),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: meta.accentColor.withValues(alpha: 0.35),
+            width: 1.2,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              BookCoverArt(meta: meta, width: 56, borderRadius: 8, showText: false),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      meta.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(meta.subtitle,
+                        style: TextStyle(
+                            color: meta.accentColor.withValues(alpha: 0.85),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 5),
+                    Text(meta.stats,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 11)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right,
+                  color: meta.accentColor.withValues(alpha: 0.6), size: 22),
             ],
           ),
         ),

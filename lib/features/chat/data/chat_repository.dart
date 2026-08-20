@@ -105,10 +105,13 @@ class ChatRepository {
       return _fetchSingleConversation(existingId);
     }
 
-    // Create new direct conversation
+    // Create new direct conversation. No created_by/owner column exists
+    // on the live conversations table -- membership (inserted below) is
+    // what actually establishes the creator's access, same as every
+    // other member.
     final convo = await SupabaseService.client
         .from('conversations')
-        .insert({'type': 'direct', 'created_by': uid})
+        .insert({'type': 'direct'})
         .select()
         .single();
 

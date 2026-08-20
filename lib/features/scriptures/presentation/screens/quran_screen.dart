@@ -236,7 +236,21 @@ class _SurahDetailScreenState extends State<_SurahDetailScreen> {
       setState(() => _duration = dur);
     });
     _player.onPlayerComplete.listen((_) {
-      if (!mounted) return;
+      // Unlike every other player callback in this file, this one has no
+      // per-request token to compare against (it's registered once here,
+      // not per play attempt) -- so it can't tell a genuine end-of-surah
+      // completion apart from a spurious one. And spurious ones happen:
+      // _playFullSurah() calls _player.stop() first when switching
+      // reciters (or retrying), and on some platforms that itself fires
+      // a completion event as a side effect. Without this guard, that
+      // stray event lands after the new reciter's playback has already
+      // started and immediately marks it inactive, making a reciter
+      // switch look like playback just stopped. _audioBusy is true for
+      // exactly the stop-download-play window, so gating on it filters
+      // the spurious case while still catching real completions (which
+      // can only happen after play() has resolved and _audioBusy is
+      // back to false).
+      if (!mounted || _audioBusy) return;
       setState(() {
         _isPlayerActive = false;
         _position = Duration.zero;

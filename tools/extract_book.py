@@ -56,6 +56,16 @@ PART_ONLY_RE = re.compile(r'^PART\s+[IVXLC]+\s*$', re.IGNORECASE)
 # (e.g. a front-matter ToC blurb spanning multiple parts) that would
 # otherwise be misread as a real single-part boundary.
 PART_WITH_TITLE_RE = re.compile(r'^PART\s+[IVXLC]+\s*[:–—]\s*(.+)$', re.IGNORECASE)
+# Bare "N. Title" numbering with no "Chapter" word at all (e.g. the KU
+# Economics revision series: "1. National Income Accounting" is a real
+# Heading-1-styled chapter boundary; "1.1 Measuring national income" is
+# a Heading-2 subsection -- the trailing `\s+` after the dot is what
+# tells them apart, since "1.1" has a digit, not whitespace, right
+# after its first dot). Only matched when style == 'Heading 1' (see
+# extract()) -- this book's own Table-of-Contents listing reuses the
+# identical "N. Title" text with no heading style at all, so gating on
+# the named style alone already avoids that collision.
+NUMBERED_CHAPTER_RE = re.compile(r'^(\d+)\.\s+(.+)$')
 TOC_LINE_RE = re.compile(r'\t\d+\s*$')  # "Chapter 3: Title\t17" style ToC rows
 BULLET_CHARS = ('•', '‣', '-', '*', '▪', '�')
 
@@ -200,6 +210,10 @@ def extract(path: Path):
                 is_real_heading_size(body[i + 1][3]):
             chap_title = f"{text.strip()}: {body[i + 1][0].strip()}"
             i += 2
+        elif style == 'Heading 1' and NUMBERED_CHAPTER_RE.match(text):
+            nm = NUMBERED_CHAPTER_RE.match(text)
+            chap_title = f"Chapter {nm.group(1)}: {nm.group(2).strip()}"
+            i += 1
 
         if chap_title is not None:
             current = {

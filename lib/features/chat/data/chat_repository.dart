@@ -88,6 +88,20 @@ class ChatRepository {
     final uid = SupabaseService.currentUserId;
     if (uid == null) throw Exception('Not authenticated');
 
+    // conversation_members has PRIMARY KEY (conversation_id, user_id) --
+    // messaging yourself would insert the exact same (convoId, uid) row
+    // twice in one statement, which Postgres rejects as a whole. That
+    // leaves a zombie conversation with zero members (confirmed live:
+    // found via a stray self-chat attempt), which then fails RLS on
+    // every message send since is_conversation_member() can never be
+    // true for it. No UI entry point should ever pass your own id here,
+    // but this is the one choke point every "message this person"
+    // screen funnels through, so it's the right place to guard
+    // regardless of how a caller got here.
+    if (otherUserId == uid) {
+      throw Exception('You can\'t message yourself.');
+    }
+
     if (await BlockService.instance.isBlockedEitherWay(otherUserId)) {
       throw Exception('You can\'t message this user.');
     }

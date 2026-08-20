@@ -61,8 +61,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     } catch (e) {
       debugPrint('ProfileScreen _messageUser failed: $e');
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Could not open chat — please try again.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Could not open chat: $e')));
       }
     }
   }

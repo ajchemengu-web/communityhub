@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:uuid/uuid.dart';
+
 import '../../../core/services/block_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../domain/models/call_model.dart';
@@ -109,13 +111,23 @@ class ChatRepository {
     // on the live conversations table -- membership (inserted below) is
     // what actually establishes the creator's access, same as every
     // other member.
-    final convo = await SupabaseService.client
+    //
+    // The id is generated client-side and the insert deliberately skips
+    // .select() -- PostgreSQL RLS applies the table's SELECT policy to
+    // the RETURNING row of an INSERT just as it would a read, and
+    // conversations_select requires is_conversation_member(id), which
+    // is false at this exact instant: no conversation_members rows
+    // exist yet (they're the next step below). Asking PostgREST to hand
+    // the new row back here throws "new row violates row-level security
+    // policy for table conversations" even though the INSERT itself is
+    // unconditionally allowed (conversations_insert's with_check is
+    // just `true`) -- confirmed live. Knowing the id upfront sidesteps
+    // the chicken-and-egg entirely; _fetchSingleConversation's own read
+    // below runs after membership exists, so it passes normally.
+    final convoId = const Uuid().v4();
+    await SupabaseService.client
         .from('conversations')
-        .insert({'type': 'direct'})
-        .select()
-        .single();
-
-    final convoId = convo['id'] as String;
+        .insert({'id': convoId, 'type': 'direct'});
 
     // Add both participants
     await SupabaseService.client.from('conversation_members').insert([

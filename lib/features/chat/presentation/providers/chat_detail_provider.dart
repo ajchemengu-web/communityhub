@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -286,10 +286,52 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
           .map((m) => m.id == tempId ? sent : m)
           .toList();
       state = state.copyWith(messages: msgs);
-    } catch (_) {
-      // Mark as failed
+    } catch (e) {
+      // The exception used to be silently discarded here (catch (_)) --
+      // when a send failed there was no way, even in the debug console,
+      // to see why. debugPrint at minimum so a real failure leaves a
+      // trace instead of just a dead "!" icon with no explanation.
+      debugPrint('ChatDetailNotifier.sendMessage failed: $e');
       final msgs = state.messages.map((m) {
         return m.id == tempId ? m.copyWith(status: MessageStatus.failed) : m;
+      }).toList();
+      state = state.copyWith(messages: msgs);
+    }
+  }
+
+  /// Retries a message that previously failed to send -- until now a
+  /// failed send (shown as a red "!" icon) was a dead end with no way
+  /// to recover short of retyping the whole message.
+  Future<void> retrySend(String messageId) async {
+    final index = state.messages.indexWhere((m) => m.id == messageId);
+    if (index == -1) return;
+    final failed = state.messages[index];
+    if (failed.status != MessageStatus.failed) return;
+
+    final retrying = failed.copyWith(status: MessageStatus.sending);
+    state = state.copyWith(
+      messages: [
+        ...state.messages.sublist(0, index),
+        retrying,
+        ...state.messages.sublist(index + 1),
+      ],
+    );
+
+    try {
+      final sent = await _repo.sendMessage(
+        conversationId: conversationId,
+        content: failed.content ?? '',
+        replyToId: failed.replyTo?.id,
+      );
+      final msgs =
+          state.messages.map((m) => m.id == messageId ? sent : m).toList();
+      state = state.copyWith(messages: msgs);
+    } catch (e) {
+      debugPrint('ChatDetailNotifier.retrySend failed: $e');
+      final msgs = state.messages.map((m) {
+        return m.id == messageId
+            ? m.copyWith(status: MessageStatus.failed)
+            : m;
       }).toList();
       state = state.copyWith(messages: msgs);
     }

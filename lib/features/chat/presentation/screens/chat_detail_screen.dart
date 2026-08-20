@@ -169,6 +169,12 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                                             .notifier)
                                         .deleteMessage(msg.id)
                                     : null,
+                                onRetry: msg.status == MessageStatus.failed
+                                    ? () => ref
+                                        .read(chatDetailProvider(widget.chatId)
+                                            .notifier)
+                                        .retrySend(msg.id)
+                                    : null,
                               ),
                             ],
                           );
@@ -319,6 +325,7 @@ class _MessageBubble extends StatelessWidget {
     required this.onReply,
     required this.onReact,
     this.onDelete,
+    this.onRetry,
   });
 
   final MessageModel message;
@@ -327,6 +334,11 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback onReply;
   final void Function(String emoji) onReact;
   final VoidCallback? onDelete;
+
+  /// Called when tapping a failed message's status icon. Previously a
+  /// failed send (the red "!" icon) was a dead end -- retyping the
+  /// whole message was the only way to recover.
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -437,7 +449,14 @@ class _MessageBubble extends StatelessWidget {
                         ),
                         if (isMe) ...[
                           const SizedBox(width: 4),
-                          _StatusIcon(status: message.status),
+                          message.status == MessageStatus.failed &&
+                                  onRetry != null
+                              ? GestureDetector(
+                                  onTap: onRetry,
+                                  child:
+                                      _StatusIcon(status: message.status),
+                                )
+                              : _StatusIcon(status: message.status),
                         ],
                       ],
                     ),

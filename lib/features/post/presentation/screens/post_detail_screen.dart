@@ -95,13 +95,19 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         ),
         title: const Text('Post', style: AppTextStyles.titleSmall),
         actions: [
-          if (state.post != null)
+          if (state.post != null) ...[
             IconButton(
               icon: const Icon(Icons.share_outlined),
               onPressed: () => Share.share(
                 'Check out this post on CommunityHub!\n${state.post!.caption}',
               ),
             ),
+            if (state.post!.userId == currentUid)
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: AppColors.error),
+                onPressed: () => _confirmAndDeletePost(context),
+              ),
+          ],
         ],
       ),
       body: state.isLoading
@@ -342,6 +348,43 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       ref
           .read(postDetailProvider(widget.postId).notifier)
           .deleteComment(commentId);
+    }
+  }
+
+  Future<void> _confirmAndDeletePost(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.darkSurface,
+        title: const Text('Delete post?',
+            style: TextStyle(color: Colors.white)),
+        content: const Text('This cannot be undone.',
+            style: TextStyle(color: Colors.white54)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete',
+                style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await ref.read(postDetailProvider(widget.postId).notifier).deletePost();
+      if (context.mounted) context.pop();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not delete post: $e')),
+        );
+      }
     }
   }
 }

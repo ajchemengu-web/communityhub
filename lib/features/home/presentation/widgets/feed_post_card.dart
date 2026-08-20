@@ -11,6 +11,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../boosts/domain/models/boost_model.dart';
 import '../../../boosts/presentation/widgets/promote_post_sheet.dart';
+import '../../../post/data/post_repository.dart';
 import '../../domain/models/post_model.dart';
 import '../providers/feed_provider.dart';
 import '../screens/youtube_player_screen.dart';
@@ -458,7 +459,7 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
                 );
               },
             ),
-            if (widget.post.userId == SupabaseService.currentUserId)
+            if (widget.post.userId == SupabaseService.currentUserId) ...[
               ListTile(
                 leading: const Icon(Icons.trending_up_rounded,
                     color: AppColors.secondary),
@@ -475,6 +476,19 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
                   );
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline,
+                    color: AppColors.error),
+                title: Text('Delete post',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.error,
+                    )),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _confirmAndDeletePost(context);
+                },
+              ),
+            ],
             ListTile(
               leading: const Icon(Icons.flag_outlined,
                   color: AppColors.textDarkPrimary),
@@ -526,6 +540,46 @@ class _FeedPostCardState extends ConsumerState<FeedPostCard>
         ),
       ),
     );
+  }
+
+  Future<void> _confirmAndDeletePost(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.darkSurface,
+        title: const Text('Delete post?',
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'This cannot be undone.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete',
+                style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await PostRepository.instance.deletePost(widget.post.id);
+      if (mounted) {
+        ref.read(feedProvider(widget.hubType).notifier).removePost(widget.post.id);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not delete post: $e')),
+        );
+      }
+    }
   }
 }
 

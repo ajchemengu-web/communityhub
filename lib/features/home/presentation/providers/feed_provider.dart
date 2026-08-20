@@ -300,6 +300,18 @@ class FeedNotifier
     state = AsyncData(_buildFeedItems());
   }
 
+  // ── Remove post (after the owner deletes it) ──────────────
+
+  /// Splices [postId] out of the feed immediately -- called once
+  /// PostRepository.deletePost succeeds, so the deleted post
+  /// disappears without waiting for a full feed refresh.
+  void removePost(String postId) {
+    final index = _posts.indexWhere((p) => p.id == postId);
+    if (index == -1) return;
+    _posts.removeAt(index);
+    state = AsyncData(_buildFeedItems());
+  }
+
   // ── Build interleaved list ────────────────────────────────
 
   /// Home feed is YouTube-only now (general posting retired). Hubs are

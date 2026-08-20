@@ -235,6 +235,11 @@ class PostDetailNotifier extends StateNotifier<PostDetailState> {
     );
   }
 
+  /// Deletes the post itself (owner-only -- RLS enforces this
+  /// server-side too). The screen navigates back on success; no local
+  /// state update is needed since the whole post is gone.
+  Future<void> deletePost() => _repo.deletePost(postId);
+
   // ── List helpers ──────────────────────────────────────────
 
   List<CommentModel> _updateCommentInList(

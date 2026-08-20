@@ -332,6 +332,29 @@ class PostRepository {
     await _db.from('comments').delete().eq('id', commentId);
   }
 
+  // ── Delete post ───────────────────────────────────────────
+
+  /// Deletes a post. Owner-only is enforced server-side by RLS
+  /// (posts_delete requires author_id = auth.uid()) -- callers should
+  /// still gate the UI entry point the same way, but this is the real
+  /// boundary.
+  ///
+  /// comments/likes referencing the post have no DB-level cascade: the
+  /// app's actual `comments`/`likes` tables aren't FK-linked to
+  /// `posts` at all (only the legacy, unused `post_comments`/
+  /// `post_likes` tables are) -- so they're deleted explicitly first to
+  /// avoid leaving orphaned rows behind. `post_tags` does have a real
+  /// `ON DELETE CASCADE` FK and needs no explicit cleanup.
+  Future<void> deletePost(String postId) async {
+    await _db.from('comments').delete().eq('post_id', postId);
+    await _db
+        .from('likes')
+        .delete()
+        .eq('target_id', postId)
+        .eq('target_type', 'post');
+    await _db.from('posts').delete().eq('id', postId);
+  }
+
   // ── Bookmark ──────────────────────────────────────────────
 
   Future<bool> toggleBookmark(String postId,

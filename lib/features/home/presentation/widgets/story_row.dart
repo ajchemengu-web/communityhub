@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../auth/presentation/providers/current_user_provider.dart';
 import '../../domain/models/story_model.dart';
 import '../providers/story_provider.dart';
 
@@ -14,17 +15,30 @@ class StoryRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final storiesAsync = ref.watch(storyProvider);
-    final myStoryAsync = ref.watch(myStoryProvider);
+    // myStoriesProvider (plural, oldest-first) replaces the old
+    // myStoryProvider (singular) here -- that meant tapping your own
+    // ring only ever passed a single-item list to the viewer, so a
+    // second/third story from today was silently unreachable even
+    // though [myStoriesProvider] already existed to fetch all of them.
+    final myStoriesAsync = ref.watch(myStoriesProvider);
+    // The current user's own avatar for the "Add Story"/"Your Story"
+    // bubble -- previously that bubble never rendered any photo at
+    // all, just a generic person/book icon regardless of who was
+    // looking at it.
+    final myAvatarUrl = ref
+        .watch(currentUserProfileProvider)
+        .whenOrNull(data: (p) => p?['avatar_url'] as String?);
 
     return SizedBox(
       height: 96,
       child: storiesAsync.when(
         loading: () => _StoryRowSkeleton(),
-        error: (_, __) => _buildList(context, [], null),
-        data: (stories) => myStoryAsync.when(
-          loading: () => _buildList(context, stories, null),
-          error: (_, __) => _buildList(context, stories, null),
-          data: (myStory) => _buildList(context, stories, myStory),
+        error: (_, __) => _buildList(context, [], const [], myAvatarUrl),
+        data: (stories) => myStoriesAsync.when(
+          loading: () => _buildList(context, stories, const [], myAvatarUrl),
+          error: (_, __) => _buildList(context, stories, const [], myAvatarUrl),
+          data: (myStories) =>
+              _buildList(context, stories, myStories, myAvatarUrl),
         ),
       ),
     );
@@ -33,7 +47,8 @@ class StoryRow extends ConsumerWidget {
   Widget _buildList(
     BuildContext context,
     List<StoryModel> stories,
-    StoryModel? myStory,
+    List<StoryModel> myStories,
+    String? myAvatarUrl,
   ) {
     // Group stories by userId for the viewer
     final grouped = <String, List<StoryModel>>{};
@@ -50,8 +65,10 @@ class StoryRow extends ConsumerWidget {
       itemBuilder: (ctx, i) {
         if (i == 0) {
           return _AddStoryBubble(
-            hasActiveStory: myStory != null,
-            myStory: myStory,
+            myStories: myStories,
+            avatarUrl:
+                (myStories.isNotEmpty ? myStories.last.avatarUrl : null) ??
+                    myAvatarUrl,
           );
         }
         final uid = userIds[i - 1];
@@ -69,19 +86,24 @@ class StoryRow extends ConsumerWidget {
 
 class _AddStoryBubble extends StatelessWidget {
   const _AddStoryBubble({
-    required this.hasActiveStory,
-    this.myStory,
+    required this.myStories,
+    this.avatarUrl,
   });
-  final bool hasActiveStory;
-  final StoryModel? myStory;
+
+  /// Oldest-first, from [myStoriesProvider] -- empty when the current
+  /// user has no active story right now.
+  final List<StoryModel> myStories;
+  final String? avatarUrl;
+
+  bool get hasActiveStory => myStories.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        if (hasActiveStory && myStory != null) {
-          context.push('/stories/${myStory!.userId}', extra: {
-            'stories': [myStory!],
+        if (hasActiveStory) {
+          context.push('/stories/${myStories.first.userId}', extra: {
+            'stories': myStories,
             'index': 0,
           });
         } else {
@@ -106,17 +128,23 @@ class _AddStoryBubble extends StatelessWidget {
                     width: 1.5,
                   ),
                 ),
-                child: hasActiveStory
-                    ? const Icon(
-                        Icons.auto_stories_rounded,
-                        color: AppColors.secondary,
-                        size: 26,
-                      )
-                    : const Icon(
-                        Icons.person_rounded,
-                        color: AppColors.textDarkSecondary,
-                        size: 26,
-                      ),
+                // Previously this always showed a generic placeholder
+                // icon (person/book) no matter who was looking at it --
+                // now shows the current user's own profile photo, same
+                // as every other story bubble does for its owner.
+                child: ClipOval(
+                  child: (avatarUrl?.isNotEmpty ?? false)
+                      ? CachedNetworkImage(
+                          imageUrl: avatarUrl!,
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => const _DefaultPersonIcon(),
+                          errorWidget: (_, __, ___) =>
+                              const _DefaultPersonIcon(),
+                        )
+                      : const _DefaultPersonIcon(),
+                ),
               ),
               // "+" badge
               if (!hasActiveStory)
@@ -152,6 +180,19 @@ class _AddStoryBubble extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DefaultPersonIcon extends StatelessWidget {
+  const _DefaultPersonIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Icon(
+      Icons.person_rounded,
+      color: AppColors.textDarkSecondary,
+      size: 26,
     );
   }
 }

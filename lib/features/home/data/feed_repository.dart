@@ -302,7 +302,7 @@ class FeedRepository {
 
       var query = _db
           .from('stories')
-          .select('*, users(username, avatar_url, is_verified)')
+          .select('*, users!stories_user_id_fkey(username, avatar_url, is_verified)')
           .gt('expires_at', DateTime.now().toIso8601String())
           .inFilter('user_id', followingIds);
       if (excludedIds.isNotEmpty) {
@@ -383,16 +383,45 @@ class FeedRepository {
 
   /// Who has viewed one of the current user's own stories — the
   /// "seen by" list shown on your active status.
+  ///
+  /// story_views.user_id has a foreign key to auth.users, not
+  /// public.users (unlike stories.user_id, which correctly points at
+  /// public.users) -- PostgREST can only auto-embed within the exposed
+  /// public schema, so `users(...)` here always failed with "Could not
+  /// find a relationship between 'story_views' and 'users'" (confirmed
+  /// live), silently swallowed by the catch below, meaning this always
+  /// returned an empty list regardless of actual view history. Fetching
+  /// in two steps sidesteps the embed entirely -- same fallback pattern
+  /// already used elsewhere in this codebase (e.g.
+  /// CommunitiesRepository.fetchFollowedUsers) for a broken/unusable
+  /// embed. Result shape (`{'viewed_at': ..., 'users': {...}}`) is kept
+  /// identical to the old embed's so _ViewersSheet needs no changes.
   Future<List<Map<String, dynamic>>> fetchStoryViewers(String storyId) async {
     try {
-      final rows = await _db
+      final viewRows = await _db
           .from('story_views')
-          .select('viewed_at, users(id, username, full_name, avatar_url)')
+          .select('viewed_at, user_id')
           .eq('story_id', storyId)
           .order('viewed_at', ascending: false) as List<dynamic>;
-      return rows
-          .map((r) => Map<String, dynamic>.from(r as Map))
-          .toList();
+      if (viewRows.isEmpty) return [];
+
+      final userIds =
+          viewRows.map((r) => r['user_id'] as String).toSet().toList();
+      final userRows = await _db
+          .from('users')
+          .select('id, username, full_name, avatar_url')
+          .inFilter('id', userIds) as List<dynamic>;
+      final usersById = {
+        for (final u in userRows) u['id'] as String: Map<String, dynamic>.from(u as Map)
+      };
+
+      return viewRows.map((r) {
+        final row = Map<String, dynamic>.from(r as Map);
+        return {
+          'viewed_at': row['viewed_at'],
+          'users': usersById[row['user_id']] ?? {},
+        };
+      }).toList();
     } catch (_) {
       return [];
     }
@@ -406,7 +435,7 @@ class FeedRepository {
     try {
       final row = await _db
           .from('stories')
-          .select('*, users(username, avatar_url, is_verified)')
+          .select('*, users!stories_user_id_fkey(username, avatar_url, is_verified)')
           .eq('user_id', uid)
           .gt('expires_at', DateTime.now().toIso8601String())
           .order('created_at', ascending: false)
@@ -431,7 +460,7 @@ class FeedRepository {
     try {
       final rows = await _db
           .from('stories')
-          .select('*, users(username, avatar_url, is_verified)')
+          .select('*, users!stories_user_id_fkey(username, avatar_url, is_verified)')
           .eq('user_id', uid)
           .gt('expires_at', DateTime.now().toIso8601String())
           .order('created_at', ascending: true) as List<dynamic>;

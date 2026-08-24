@@ -6,6 +6,7 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../auth/presentation/providers/current_user_provider.dart';
 import '../../../home/data/feed_repository.dart';
 import '../../../home/domain/models/story_model.dart';
 import '../../../home/presentation/providers/story_provider.dart';
@@ -144,6 +145,13 @@ class _MyStatusRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final myStory = ref.watch(myStoryProvider).valueOrNull;
     final hasStory = myStory != null;
+    // Falls back to the current user's own profile photo when they
+    // don't have an active story yet -- previously this showed a
+    // generic person icon in that case regardless of who was logged in.
+    final myAvatarUrl = myStory?.avatarUrl ??
+        ref
+            .watch(currentUserProfileProvider)
+            .whenOrNull(data: (p) => p?['avatar_url'] as String?);
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -159,9 +167,9 @@ class _MyStatusRow extends ConsumerWidget {
               color: hasStory ? null : AppColors.darkSurface2,
             ),
             child: ClipOval(
-              child: (myStory?.avatarUrl.isNotEmpty ?? false)
+              child: (myAvatarUrl?.isNotEmpty ?? false)
                   ? CachedNetworkImage(
-                      imageUrl: myStory!.avatarUrl, fit: BoxFit.cover)
+                      imageUrl: myAvatarUrl!, fit: BoxFit.cover)
                   : Container(
                       color: AppColors.primaryLight,
                       child: const Icon(Icons.person, color: Colors.white),

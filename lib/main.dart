@@ -10,6 +10,7 @@ import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'features/ads/data/ad_service.dart';
+import 'features/chat/presentation/screens/call_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -137,7 +138,25 @@ class CommunityHubApp extends ConsumerWidget {
               MediaQuery.of(context).textScaler.scale(1.0).clamp(0.85, 1.15),
             ),
           ),
-          child: child!,
+          // IncomingCallOverlay was written to be "triggered from the
+          // main app shell when callProvider.incomingCall is set" (see
+          // its own doc comment) but was never actually mounted
+          // anywhere -- callProvider was only ever watched from
+          // CallScreen itself, which nothing pushes you to until you
+          // already know a call is incoming. Confirmed live (a raw
+          // Realtime WebSocket test proved the server-side INSERT event
+          // delivers correctly) that this -- not the RLS/embed bugs
+          // already fixed -- was the reason the receiving side saw
+          // nothing at all: there was no always-on listener anywhere in
+          // the app to construct CallNotifier and catch it. Renders
+          // SizedBox.shrink() (zero footprint) whenever there's no
+          // incoming call, so it's safe to keep mounted on every route.
+          child: Stack(
+            children: [
+              child!,
+              const IncomingCallOverlay(),
+            ],
+          ),
         );
       },
     );

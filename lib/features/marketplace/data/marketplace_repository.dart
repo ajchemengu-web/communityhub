@@ -19,15 +19,13 @@ class MarketplaceRepository {
   /// a plain nullable param can't distinguish those two cases.
   static const Object _unset = Object();
 
-  // NOTE: the seller embed below targets `users!seller_id`, not
-  // `profiles!seller_id` — products.seller_id's actual FK is to
-  // public.users (see 20260704d_marketplace_schema.sql), and there is no
-  // public.profiles table/view in this schema, so `profiles!seller_id`
-  // would fail to resolve as a PostgREST relationship. Fixed here because
-  // the new shop/marketplace trust-signal UI depends on this actually
-  // returning seller name/avatar; _orderSelect below has the same
-  // `profiles!` pattern but is pre-existing and out of scope for this
-  // change, so it's left as-is.
+  // The seller/buyer embeds below target `users!<fk>`, not
+  // `profiles!<fk>` — there is no public.profiles table/view in this
+  // schema, so `profiles!<fk>` fails to resolve as a PostgREST
+  // relationship (PGRST200 "no relationship found", confirmed live).
+  // _orderSelect's `buyer:profiles!buyer_id` had this exact bug too --
+  // originally left as-is when _productSelect was fixed, but fixed now
+  // as part of an app-wide sweep for the same pattern.
   static const _productSelect = '''
     id, seller_id, community_id, type, title, description, price, currency,
     images, stock, is_active, created_at,
@@ -44,7 +42,7 @@ class MarketplaceRepository {
     id, buyer_id, product_id, seller_id, quantity, amount, currency,
     fulfillment_status, payment_transaction_id, created_at,
     products(title),
-    buyer:profiles!buyer_id(full_name, avatar_url)
+    buyer:users!buyer_id(full_name, avatar_url)
   ''';
 
   // ── Products ──────────────────────────────────────────────────

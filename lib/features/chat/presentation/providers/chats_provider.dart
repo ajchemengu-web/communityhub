@@ -166,8 +166,9 @@ class ChatsNotifier extends StateNotifier<ChatsState> {
 
     final updated = list[idx].copyWith(
       lastMessage: lastMessage,
-      lastMessageAt:
-          lastMessageAt != null ? DateTime.tryParse(lastMessageAt) : null,
+      lastMessageAt: lastMessageAt != null
+          ? DateTime.tryParse(lastMessageAt)?.toLocal()
+          : null,
       lastMessageSenderId: senderId,
       unreadCount: isFromMe ? list[idx].unreadCount : list[idx].unreadCount + 1,
     );

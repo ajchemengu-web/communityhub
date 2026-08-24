@@ -97,7 +97,7 @@ class MyChurchNotifier extends StateNotifier<MyChurchState> {
     final rows = await SupabaseService.client
         .from('prayer_requests')
         .select(
-            '*, profiles!author_id(full_name, avatar_url)')
+            '*, users!author_id(full_name, avatar_url)')
         .eq('community_id', communityId)
         .order('created_at', ascending: false)
         .limit(20) as List<dynamic>;
@@ -117,7 +117,7 @@ class MyChurchNotifier extends StateNotifier<MyChurchState> {
 
     return rows.map((r) {
       final map = Map<String, dynamic>.from(r as Map);
-      final profile = map['profiles'] as Map<String, dynamic>?;
+      final profile = map['users'] as Map<String, dynamic>?;
       map['author_name'] = profile?['full_name'] as String?;
       map['author_avatar'] = profile?['avatar_url'] as String?;
       map['has_prayed'] = prayedIds.contains(map['id'] as String);
@@ -174,10 +174,10 @@ class MyChurchNotifier extends StateNotifier<MyChurchState> {
             'content': content,
             'is_anonymous': isAnonymous,
           })
-          .select('*, profiles!author_id(full_name, avatar_url)')
+          .select('*, users!author_id(full_name, avatar_url)')
           .single();
 
-      final profile = row['profiles'] as Map<String, dynamic>?;
+      final profile = row['users'] as Map<String, dynamic>?;
       final map = Map<String, dynamic>.from(row);
       map['author_name'] = profile?['full_name'];
       map['author_avatar'] = profile?['avatar_url'];

@@ -217,9 +217,10 @@ class FeedRepository {
                 channelId: m['channel_id'] as String,
                 channelTitle: m['channel_title'] as String,
                 thumbnailUrl: m['thumbnail_url'] as String,
-                publishedAt:
-                    DateTime.tryParse(m['published_at'] as String? ?? '') ??
-                        DateTime.now(),
+                publishedAt: DateTime.tryParse(
+                            m['published_at'] as String? ?? '')
+                        ?.toLocal() ??
+                    DateTime.now(),
                 viewCount: m['view_count'] as int?,
                 likeCount: m['like_count'] as int?,
                 duration: m['duration'] as String?,

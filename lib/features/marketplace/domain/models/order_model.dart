@@ -44,7 +44,7 @@ class OrderModel {
       currency: map['currency'] as String? ?? 'KES',
       fulfillmentStatus: _parseStatus(map['fulfillment_status'] as String? ?? 'pending'),
       paymentTransactionId: map['payment_transaction_id'] as String?,
-      createdAt: DateTime.parse(map['created_at'] as String),
+      createdAt: DateTime.parse(map['created_at'] as String).toLocal(),
     );
   }
 

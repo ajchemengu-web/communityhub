@@ -29,10 +29,10 @@ class RsvpModel {
       eventId: map['event_id'] as String,
       userId: map['user_id'] as String,
       status: _parseStatus(map['status'] as String? ?? 'going'),
-      userName: (map['profiles'] as Map?)?['full_name'] as String?,
-      userAvatar: (map['profiles'] as Map?)?['avatar_url'] as String?,
+      userName: (map['users'] as Map?)?['full_name'] as String?,
+      userAvatar: (map['users'] as Map?)?['avatar_url'] as String?,
       createdAt: map['created_at'] != null
-          ? DateTime.tryParse(map['created_at'] as String)
+          ? DateTime.tryParse(map['created_at'] as String)?.toLocal()
           : null,
     );
   }
@@ -182,9 +182,9 @@ class EventModel {
       isOnline: (map['is_online'] as bool?) ?? false,
       location: map['location'] as String?,
       meetingUrl: map['meeting_url'] as String?,
-      startTime: DateTime.parse(map['start_time'] as String),
-      endTime: DateTime.parse(map['end_time'] as String),
-      createdAt: DateTime.parse(map['created_at'] as String),
+      startTime: DateTime.parse(map['start_time'] as String).toLocal(),
+      endTime: DateTime.parse(map['end_time'] as String).toLocal(),
+      createdAt: DateTime.parse(map['created_at'] as String).toLocal(),
       goingCount: (map['going_count'] as int?) ?? 0,
       maybeCount: (map['maybe_count'] as int?) ?? 0,
       userRsvp: userRsvp,

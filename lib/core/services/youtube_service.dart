@@ -322,7 +322,9 @@ class YouTubeVideo {
       channelId: snippet['channelId'] as String? ?? '',
       channelTitle: snippet['channelTitle'] as String? ?? '',
       thumbnailUrl: thumb['url'] as String? ?? '',
-      publishedAt: DateTime.tryParse(snippet['publishedAt'] as String? ?? '') ?? DateTime.now(),
+      publishedAt: DateTime.tryParse(snippet['publishedAt'] as String? ?? '')
+              ?.toLocal() ??
+          DateTime.now(),
     );
   }
 
@@ -341,7 +343,9 @@ class YouTubeVideo {
       channelId: snippet['channelId'] as String? ?? '',
       channelTitle: snippet['channelTitle'] as String? ?? '',
       thumbnailUrl: thumb['url'] as String? ?? '',
-      publishedAt: DateTime.tryParse(snippet['publishedAt'] as String? ?? '') ?? DateTime.now(),
+      publishedAt: DateTime.tryParse(snippet['publishedAt'] as String? ?? '')
+              ?.toLocal() ??
+          DateTime.now(),
       viewCount: int.tryParse(stats['viewCount'] as String? ?? ''),
       likeCount: int.tryParse(stats['likeCount'] as String? ?? ''),
       duration: content['duration'] as String?,

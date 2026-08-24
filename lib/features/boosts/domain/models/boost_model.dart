@@ -31,8 +31,8 @@ class BoostModel {
           : BoostTargetType.post,
       targetId: map['target_id'] as String,
       buyerId: map['buyer_id'] as String,
-      startsAt: DateTime.parse(map['starts_at'] as String),
-      endsAt: DateTime.parse(map['ends_at'] as String),
+      startsAt: DateTime.parse(map['starts_at'] as String).toLocal(),
+      endsAt: DateTime.parse(map['ends_at'] as String).toLocal(),
       rankWeight: (map['rank_weight'] as num?)?.toDouble() ?? 1.0,
       paymentTransactionId: map['payment_transaction_id'] as String?,
     );

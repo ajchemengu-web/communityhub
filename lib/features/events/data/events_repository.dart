@@ -16,7 +16,7 @@ class EventsRepository {
     start_time, end_time, created_at, going_count, maybe_count,
     communities(name),
     group:community_channels(name),
-    organizer:profiles!organizer_id(full_name, avatar_url),
+    organizer:users!organizer_id(full_name, avatar_url),
     rsvps(user_id, status)
   ''';
 
@@ -179,7 +179,7 @@ class EventsRepository {
   Future<List<RsvpModel>> fetchRsvps(String eventId) async {
     final rows = await _client
         .from('event_rsvps')
-        .select('event_id, user_id, status, created_at, profiles(full_name, avatar_url)')
+        .select('event_id, user_id, status, created_at, users(full_name, avatar_url)')
         .eq('event_id', eventId) as List;
 
     return rows

@@ -39,7 +39,8 @@ class GroupMemberModel {
       userId: (user['id'] as String?) ?? (map['user_id'] as String? ?? ''),
       role: map['role'] as String? ?? 'member',
       status: map['status'] as String? ?? 'approved',
-      joinedAt: DateTime.tryParse(map['joined_at'] as String? ?? '') ??
+      joinedAt: DateTime.tryParse(map['joined_at'] as String? ?? '')
+              ?.toLocal() ??
           DateTime.now(),
       username: user['username'] as String?,
       fullName: user['full_name'] as String?,

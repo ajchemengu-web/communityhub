@@ -27,7 +27,8 @@ class CommunityChannelModel {
       description: map['description'] as String?,
       isDefault: (map['is_default'] as bool?) ?? false,
       channelType: map['channel_type'] as String? ?? 'general',
-      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '')
+              ?.toLocal() ??
           DateTime.now(),
       createdBy: map['created_by'] as String?,
     );

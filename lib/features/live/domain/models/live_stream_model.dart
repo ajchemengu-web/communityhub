@@ -37,9 +37,9 @@ class LiveStreamModel {
       hubType: map['hub_type'] as String?,
       viewerCount: (map['viewer_count'] as int?) ?? 0,
       isActive: (map['is_active'] as bool?) ?? true,
-      startedAt: DateTime.parse(map['started_at'] as String),
+      startedAt: DateTime.parse(map['started_at'] as String).toLocal(),
       endedAt: map['ended_at'] != null
-          ? DateTime.tryParse(map['ended_at'] as String)
+          ? DateTime.tryParse(map['ended_at'] as String)?.toLocal()
           : null,
     );
   }
@@ -88,7 +88,7 @@ class LiveCommentModel {
       userName: user?['full_name'] as String? ?? 'User',
       userAvatar: user?['avatar_url'] as String?,
       content: map['content'] as String,
-      createdAt: DateTime.parse(map['created_at'] as String),
+      createdAt: DateTime.parse(map['created_at'] as String).toLocal(),
     );
   }
 }

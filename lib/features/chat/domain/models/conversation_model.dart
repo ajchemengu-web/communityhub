@@ -69,18 +69,19 @@ class ConversationModel extends Equatable {
       type: (map['type'] as String?) == 'group'
           ? ConversationType.group
           : ConversationType.direct,
-      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '')
+              ?.toLocal() ??
           DateTime.now(),
       name: map['name'] as String?,
       coverUrl: map['cover_url'] as String?,
       lastMessage: map['last_message'] as String?,
       lastMessageAt: map['last_message_at'] != null
-          ? DateTime.tryParse(map['last_message_at'] as String)
+          ? DateTime.tryParse(map['last_message_at'] as String)?.toLocal()
           : null,
       lastMessageSenderId: map['last_message_sender_id'] as String?,
       unreadCount: (map['unread_count'] as int?) ?? 0,
       lastReadAt: map['last_read_at'] != null
-          ? DateTime.tryParse(map['last_read_at'] as String)
+          ? DateTime.tryParse(map['last_read_at'] as String)?.toLocal()
           : null,
       participants: participants,
     );

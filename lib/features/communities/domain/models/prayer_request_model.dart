@@ -38,7 +38,8 @@ class PrayerRequestModel extends Equatable {
       communityId: map['community_id'] as String,
       authorId: map['author_id'] as String,
       content: map['content'] as String,
-      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '')
+              ?.toLocal() ??
           DateTime.now(),
       isAnswered: (map['is_answered'] as bool?) ?? false,
       isAnonymous: (map['is_anonymous'] as bool?) ?? false,

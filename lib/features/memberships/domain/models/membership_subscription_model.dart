@@ -44,13 +44,13 @@ class MembershipSubscriptionModel {
           : null,
       communityId: map['community_id'] as String,
       currentPeriodEnd: map['current_period_end'] != null
-          ? DateTime.parse(map['current_period_end'] as String)
+          ? DateTime.parse(map['current_period_end'] as String).toLocal()
           : null,
       paymentTransactionId: map['payment_transaction_id'] as String?,
       transactionStatus: transaction != null
           ? _parseStatus(transaction['status'] as String? ?? 'pending')
           : null,
-      createdAt: DateTime.parse(map['created_at'] as String),
+      createdAt: DateTime.parse(map['created_at'] as String).toLocal(),
     );
   }
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -92,11 +93,33 @@ class CallState {
 
 class CallNotifier extends StateNotifier<CallState> {
   CallNotifier() : super(const CallState()) {
+    // IncomingCallOverlay (which is what constructs this notifier, via
+    // callProvider) is mounted unconditionally at the app root in
+    // main.dart, before login -- so on a fresh install/logged-out
+    // start/mid-session sign-in, SupabaseService.currentUserId is still
+    // null the instant this constructor runs. _listenForIncomingCalls()
+    // used to just silently return in that case and nothing ever
+    // retried it, so that device would never see another incoming call
+    // for its entire app session -- no error anywhere, calls just
+    // "don't go through". Re-running it on every auth state change
+    // (and tearing down the old channel first, since it's keyed to the
+    // now-stale uid) closes that gap, and also means switching accounts
+    // mid-session re-subscribes for the new uid instead of leaving the
+    // previous user's channel filter active.
     _listenForIncomingCalls();
+    _authSub = SupabaseService.authStateChanges.listen((_) {
+      final uid = SupabaseService.currentUserId;
+      if (uid == _lastListenedUid) return;
+      _callChannel?.unsubscribe();
+      _callChannel = null;
+      _listenForIncomingCalls();
+    });
   }
 
   final _repo = ChatRepository.instance;
   RealtimeChannel? _callChannel;
+  StreamSubscription<AuthState>? _authSub;
+  String? _lastListenedUid;
   Timer? _durationTimer;
 
   // LiveKit room for the active call's audio/video. Lives on the
@@ -110,6 +133,7 @@ class CallNotifier extends StateNotifier<CallState> {
 
   void _listenForIncomingCalls() {
     final uid = SupabaseService.currentUserId;
+    _lastListenedUid = uid;
     if (uid == null) return;
 
     _callChannel = SupabaseService.client
@@ -133,8 +157,8 @@ class CallNotifier extends StateNotifier<CallState> {
                   .select('''
                     id, conversation_id, caller_id, receiver_id,
                     type, status, channel_name, created_at, started_at, ended_at,
-                    caller:profiles!caller_id(full_name, avatar_url),
-                    receiver:profiles!receiver_id(full_name, avatar_url)
+                    caller:users!caller_id(full_name, avatar_url),
+                    receiver:users!receiver_id(full_name, avatar_url)
                   ''')
                   .eq('id', row['id'] as String)
                   .single();
@@ -143,7 +167,20 @@ class CallNotifier extends StateNotifier<CallState> {
               if (call.isRinging) {
                 state = state.copyWith(incomingCall: call);
               }
-            } catch (_) {}
+            } catch (e) {
+              // This used to fail on every single call, silently: the
+              // embed above previously read `profiles!caller_id` /
+              // `profiles!receiver_id`, but there is no public.profiles
+              // relationship PostgREST can resolve (confirmed live --
+              // PGRST200, same class of bug already found in
+              // messages/stories this session) -- so an incoming call
+              // notification could never actually reach this state,
+              // regardless of whether the realtime event itself
+              // arrived. Fixed to `users!...`, but keeping this
+              // debugPrint so a future regression here is diagnosable
+              // without a full DB audit.
+              debugPrint('CallNotifier incoming-call fetch failed: $e');
+            }
           },
         )
         .onPostgresChanges(
@@ -171,7 +208,7 @@ class CallNotifier extends StateNotifier<CallState> {
                 final updated = state.activeCall!.copyWith(
                   status: CallStatus.active,
                   startedAt: startedAt != null
-                      ? DateTime.tryParse(startedAt)
+                      ? DateTime.tryParse(startedAt)?.toLocal()
                       : DateTime.now(),
                 );
                 state = state.copyWith(activeCall: updated, clearError: true);
@@ -403,6 +440,7 @@ class CallNotifier extends StateNotifier<CallState> {
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _callChannel?.unsubscribe();
     _durationTimer?.cancel();
     _roomListener?.dispose();

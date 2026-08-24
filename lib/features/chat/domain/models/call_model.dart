@@ -71,7 +71,8 @@ class CallModel extends Equatable {
           ? CallType.video
           : CallType.audio,
       status: _parseStatus(map['status'] as String? ?? 'ringing'),
-      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '')
+              ?.toLocal() ??
           DateTime.now(),
       channelName: map['channel_name'] as String?,
       callerName: caller?['full_name'] as String?,
@@ -80,10 +81,10 @@ class CallModel extends Equatable {
       receiverName: receiver?['full_name'] as String?,
       receiverAvatar: receiver?['avatar_url'] as String?,
       startedAt: map['started_at'] != null
-          ? DateTime.tryParse(map['started_at'] as String)
+          ? DateTime.tryParse(map['started_at'] as String)?.toLocal()
           : null,
       endedAt: map['ended_at'] != null
-          ? DateTime.tryParse(map['ended_at'] as String)
+          ? DateTime.tryParse(map['ended_at'] as String)?.toLocal()
           : null,
     );
   }

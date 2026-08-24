@@ -41,7 +41,7 @@ class CommentModel extends Equatable {
       userId: map['user_id'] as String,
       content: map['content'] as String,
       likesCount: (map['likes_count'] as int?) ?? 0,
-      createdAt: DateTime.parse(map['created_at'] as String),
+      createdAt: DateTime.parse(map['created_at'] as String).toLocal(),
       parentCommentId: map['parent_comment_id'] as String?,
       username: user?['username'] as String?,
       fullName: user?['full_name'] as String?,

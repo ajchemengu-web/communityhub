@@ -45,7 +45,7 @@ class PaymentTransactionModel {
       amount: (map['amount'] as num).toDouble(),
       currency: map['currency'] as String? ?? 'KES',
       status: _parseStatus(map['status'] as String? ?? 'pending'),
-      createdAt: DateTime.parse(map['created_at'] as String),
+      createdAt: DateTime.parse(map['created_at'] as String).toLocal(),
     );
   }
 

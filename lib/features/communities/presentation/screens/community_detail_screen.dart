@@ -1158,7 +1158,8 @@ class _CommunityChannelScreenState
           _messages.add({
             'text': (r['content'] ?? r['caption'] ?? '') as String,
             'sender': user['full_name'] ?? user['username'] ?? 'Member',
-            'time': DateTime.tryParse(r['created_at'] as String? ?? '') ??
+            'time': DateTime.tryParse(r['created_at'] as String? ?? '')
+                    ?.toLocal() ??
                 DateTime.now(),
             'isMe': r['author_id'] == uid || r['user_id'] == uid,
             'isSystem': false,

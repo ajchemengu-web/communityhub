@@ -65,8 +65,9 @@ class CommunityMembersScreen extends ConsumerWidget {
                       final role = (m['role'] as String?) ?? 'member';
                       final userId = u['id'] as String?;
                       final isSelf = userId != null && userId == myUid;
-                      final joinedAt =
-                          DateTime.tryParse(m['joined_at'] as String? ?? '');
+                      final joinedAt = DateTime.tryParse(
+                              m['joined_at'] as String? ?? '')
+                          ?.toLocal();
 
                       // Only admins/moderators see any management menu at
                       // all, never on their own row, and moderators (as

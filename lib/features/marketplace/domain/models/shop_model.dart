@@ -45,7 +45,7 @@ class ShopModel {
       logoUrl: map['logo_url'] as String?,
       category: map['category'] as String?,
       isPublished: (map['is_published'] as bool?) ?? false,
-      createdAt: DateTime.parse(map['created_at'] as String),
+      createdAt: DateTime.parse(map['created_at'] as String).toLocal(),
       ownerName: owner?['full_name'] as String?,
       ownerAvatarUrl: owner?['avatar_url'] as String?,
     );

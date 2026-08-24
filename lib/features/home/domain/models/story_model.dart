@@ -47,9 +47,11 @@ class StoryModel {
       mediaType: map['media_type'] as String? ?? 'image',
       caption: map['caption'] as String?,
       isSeen: map['is_seen'] as bool? ?? false,
-      expiresAt: DateTime.tryParse(map['expires_at'] as String? ?? '') ??
+      expiresAt: DateTime.tryParse(map['expires_at'] as String? ?? '')
+              ?.toLocal() ??
           DateTime.now().add(const Duration(hours: 24)),
-      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '')
+              ?.toLocal() ??
           DateTime.now(),
     );
   }

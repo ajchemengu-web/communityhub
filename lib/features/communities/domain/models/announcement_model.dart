@@ -33,7 +33,8 @@ class AnnouncementModel extends Equatable {
       authorId: map['author_id'] as String,
       title: map['title'] as String,
       content: map['content'] as String,
-      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '')
+              ?.toLocal() ??
           DateTime.now(),
       mediaUrl: map['media_url'] as String?,
       isPinned: (map['is_pinned'] as bool?) ?? false,

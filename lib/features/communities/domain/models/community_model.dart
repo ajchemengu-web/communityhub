@@ -56,7 +56,8 @@ class CommunityModel extends Equatable {
       name: map['name'] as String,
       createdBy: (map['creator_id'] ?? map['created_by']) as String? ?? '',
       membersCount: (map['members_count'] as int?) ?? 0,
-      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '')
+              ?.toLocal() ??
           DateTime.now(),
       description: map['description'] as String? ?? '',
       coverUrl: map['cover_url'] as String?,

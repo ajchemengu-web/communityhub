@@ -106,7 +106,8 @@ class PostModel {
       sharesCount: (map['saves_count'] ?? map['shares_count']) as int? ?? 0,
       isLikedByCurrentUser: map['is_liked'] as bool? ?? false,
       isBookmarkedByCurrentUser: map['is_bookmarked'] as bool? ?? false,
-      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '') ??
+      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '')
+              ?.toLocal() ??
           DateTime.now(),
     );
   }

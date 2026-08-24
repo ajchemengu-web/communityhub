@@ -56,7 +56,7 @@ class ProductModel {
       images: (map['images'] as List?)?.cast<String>() ?? const [],
       stock: map['stock'] as int?,
       isActive: (map['is_active'] as bool?) ?? true,
-      createdAt: DateTime.parse(map['created_at'] as String),
+      createdAt: DateTime.parse(map['created_at'] as String).toLocal(),
     );
   }
 

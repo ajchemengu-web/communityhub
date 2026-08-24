@@ -74,7 +74,7 @@ class NotificationModel {
       type: _parseType(map['type'] as String? ?? 'general'),
       title: map['title'] as String? ?? '',
       body: map['body'] as String? ?? '',
-      createdAt: DateTime.parse(map['created_at'] as String),
+      createdAt: DateTime.parse(map['created_at'] as String).toLocal(),
       data: map['data'] is Map
           ? Map<String, dynamic>.from(map['data'] as Map)
           : const {},
